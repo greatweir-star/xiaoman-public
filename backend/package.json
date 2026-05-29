@@ -1,0 +1,20 @@
+{
+  "name": "xiaoman-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "小满 - 面向初高中生的 AI 陪伴伙伴",
+  "type": "module",
+  "scripts": {
+    "dev": "node --loader ts-node/esm src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}

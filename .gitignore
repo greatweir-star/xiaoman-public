@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+.pnpm-debug.log*
+
+# Data & runtime files (DO NOT commit user data)
+backend-py/data/
+backend-py/data_*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Build outputs
+web/dist/
+web/build/

@@ -1,0 +1,18 @@
+name: "成长陪伴"
+version: "1.0"
+priority: 60
+mutex_group: "study_support"
+enabled: true
+
+triggers:
+  - type: keyword
+    keywords: ["考试", "考砸", "成绩", "作业写不完", "复习"]
+  - type: change
+    layer: L3
+    change: exam_mentioned
+
+actions:
+  - type: prompt_hint
+    text: "用户在学习/考试相关话题上需要支持，请鼓励+具体可行的小建议，避免说教。"
+  - type: log_event
+    event_type: study_support

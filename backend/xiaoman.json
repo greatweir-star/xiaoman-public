@@ -1,0 +1,45 @@
+{
+  "agent": {
+    "id": "xiaoman",
+    "name": "小满",
+    "defaultModel": "kimi-latest"
+  },
+  "memory": {
+    "storageType": "json",
+    "dataDir": "./data",
+    "maxHistoryRounds": 6
+  },
+  "progress": {
+    "levels": [
+      { "level": 1, "name": "新同桌", "turns": 0, "days": 0 },
+      { "level": 2, "name": "饭搭子", "turns": 20, "days": 3 },
+      { "level": 3, "name": "树洞", "turns": 50, "days": 7 },
+      { "level": 4, "name": "闺蜜/老铁", "turns": 100, "days": 14 },
+      { "level": 5, "name": "灵魂搭档", "turns": 200, "days": 30 }
+    ],
+    "honeyMoonDays": 3,
+    "honeyMoonPrecision": 3
+  },
+  "nightMode": {
+    "startHour": 23,
+    "endHour": 6,
+    "responseChance": 0.1
+  },
+  "quqiu": {
+    "probability": 0.3,
+    "maxPerReply": 2
+  },
+  "compaction": {
+    "maxMessages": 12,
+    "keepRecent": 4
+  },
+  "model": {
+    "provider": "pipellm",
+    "baseUrl": "https://api.pipellm.ai/openai/v1",
+    "modelId": "gpt-4o-mini",
+    "apiKey": "pipe-f0de69bc8255f7b71d0613337e4b7b686b38a545a7e8d602d1887030103df845",
+    "apiKeyEnv": "LLM_API_KEY",
+    "temperature": 0.8,
+    "maxTokens": 512
+  }
+}

@@ -1,0 +1,9 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+websockets==13.1
+openai==1.54.0
+python-dotenv==1.0.0
+pydantic==2.9.0
+lancedb>=0.30.0
+pyyaml>=6.0.0
+pytest>=8.0.0

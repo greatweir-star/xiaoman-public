@@ -1,0 +1,20 @@
+name: "情绪急救"
+version: "1.0"
+priority: 90
+mutex_group: "emotional_response"
+enabled: true
+
+triggers:
+  - type: keyword
+    keywords: ["难过", "伤心", "想哭", "好烦", "崩溃", "绝望"]
+  - type: emotion
+    values: ["难过", "焦虑", "烦"]
+
+actions:
+  - type: prompt_hint
+    text: "用户情绪低落，请用温柔共情的方式回复，先接纳感受，不要讲道理或给清单式建议。"
+  - type: update_state
+    target: xiaoman_emotion
+    value: "温柔"
+  - type: log_event
+    event_type: emotional_support

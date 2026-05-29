@@ -1,0 +1,19 @@
+version: "3.8"
+
+services:
+  xiaoman-backend:
+    build: ./backend
+    ports:
+      - "18789:18789"
+    volumes:
+      - ./data:/data
+    environment:
+      - NODE_ENV=production
+      - XIAOMAN_DATA_DIR=/data
+
+  xiaoman-web:
+    build: ./web
+    ports:
+      - "3000:80"
+    depends_on:
+      - xiaoman-backend
