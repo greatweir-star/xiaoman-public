@@ -29,7 +29,11 @@ def test_session_time_warn_once(monkeypatch):
     assert timer.check_session_time() is False
 
 
-def test_phase0_session_time_warning_flag():
+def test_phase0_session_time_warning_flag(monkeypatch):
+    monkeypatch.setattr(
+        "xiaoman.dialogue.triggers.is_night_sleep_period",
+        lambda dt=None: False,
+    )
     r = check_phase0_triggers(
         user_message="嗨",
         message_count=1,
@@ -41,7 +45,11 @@ def test_phase0_session_time_warning_flag():
     assert any("连续在线" in h for h in r.strategy_hints)
 
 
-def test_phase0_rest_requires_flag():
+def test_phase0_rest_requires_flag(monkeypatch):
+    monkeypatch.setattr(
+        "xiaoman.dialogue.triggers.is_night_sleep_period",
+        lambda dt=None: False,
+    )
     r = check_phase0_triggers(
         user_message="嗨",
         message_count=15,

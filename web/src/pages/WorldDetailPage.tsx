@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useState, useEffect } from "react";
 
 interface WorldDetailPageProps {
@@ -6,7 +7,6 @@ interface WorldDetailPageProps {
   onBack: () => void;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
 const SIDE_TITLES: Record<string, string> = { xiaoman: "小满的世界", user: "你的世界" };
 
 export default function WorldDetailPage({ userId, side, onBack }: WorldDetailPageProps) {
@@ -14,13 +14,10 @@ export default function WorldDetailPage({ userId, side, onBack }: WorldDetailPag
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}`)
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
+    apiJson<any | null>(`/api/world/${userId}`, null).then((d) => {
+      setData(d);
+      setLoading(false);
+    });
   }, [userId]);
 
   const world = data?.[side] || {};

@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useEffect, useState } from "react";
 import AchievementBadge, { type BadgeInfo } from "../components/AchievementBadge";
 import ShareCard, { type ShareCardData } from "../components/ShareCard";
@@ -26,8 +27,6 @@ interface GrowthPageProps {
   onNavigate?: (view: "report") => void;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
-
 function formatDate(iso?: string): string {
   if (!iso) return "";
   try {
@@ -47,22 +46,17 @@ export default function GrowthPage({ userId, onBack, onNavigate }: GrowthPagePro
   const [shareUrl, setShareUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}/growth`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiJson<GrowthData | null>(`/api/world/${userId}/growth`, null)
       .then((d) => d && setData(d))
-      .catch(() => {})
       .finally(() => setLoading(false));
   }, [userId]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}/achievements`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.achievements) {
-          setAchievements(d.achievements);
-        }
-      })
-      .catch(() => {});
+    apiJson<{ achievements?: BadgeInfo[] } | null>(`/api/world/${userId}/achievements`, null).then((d) => {
+      if (d?.achievements) {
+        setAchievements(d.achievements);
+      }
+    });
   }, [userId]);
 
   const weather = data?.emotional_weather;

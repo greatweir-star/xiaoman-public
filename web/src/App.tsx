@@ -1,3 +1,4 @@
+import { apiJson, apiPostJson, getAccessToken, getGatewayUrl } from "./lib/backend";
 import { useState, useEffect, useRef, useCallback } from "react";
 import OnboardingFlow, { type OnboardingConfig } from "./components/OnboardingFlow";
 import ChatPage, { type ChatMessage } from "./pages/ChatPage";
@@ -16,8 +17,7 @@ import {
   type CompanionStyle,
 } from "./lib/companionAvatar";
 
-const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL || "ws://localhost:18789";
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
+const GATEWAY_URL = getGatewayUrl();
 
 interface XiaomanConfig {
   name: string;
@@ -79,22 +79,15 @@ export default function App() {
   const [avatarLightbox, setAvatarLightbox] = useState(false);
 
   const fetchSkillTree = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/world/${userId}/skill-tree`);
-      if (res.ok) {
-        const data = await res.json();
-        setSkillTree({
-          level: data.level ?? 1,
-          name: data.name ?? "新同桌",
-          xp: data.xp ?? 0,
-          next_threshold: data.next_threshold ?? 20,
-        });
-      }
-    } catch {
-      // 静默失败
-    }
+    const data = await apiJson<any | null>(`/api/world/${userId}/skill-tree`, null);
+    if (!data) return;
+    setSkillTree({
+      level: data.level ?? 1,
+      name: data.name ?? "\u65b0\u540c\u684c",
+      xp: data.xp ?? 0,
+      next_threshold: data.next_threshold ?? 20,
+    });
   }, [userId]);
-
   const handleStyleChange = useCallback((style: CompanionStyle) => {
     setConfig((prev) => {
       const next = { ...prev, style };
@@ -104,49 +97,34 @@ export default function App() {
   }, []);
 
   const syncIdentityToBackend = useCallback(async (cfg: XiaomanConfig) => {
-    try {
-      await fetch(`${API_URL}/api/world/${userId}/identity`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          companion_name: cfg.name,
-          xiaoman_name: cfg.name,
-          grade: cfg.grade,
-          gender: cfg.gender,
-          style: cfg.style,
-        }),
-      });
-    } catch {
-      // Onboarding 可离线完成，聊天时再同步
-    }
+    await apiPostJson(`/api/world/${userId}/identity`, {
+      companion_name: cfg.name,
+      xiaoman_name: cfg.name,
+      grade: cfg.grade,
+      gender: cfg.gender,
+      style: cfg.style,
+    }, null);
   }, [userId]);
 
   // 获取小满状态
   const fetchXiaomanStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/world/${userId}/xiaoman`);
-      if (res.ok) {
-        const data = await res.json();
-        setXiaomanStatus({
-          activity: data.schedule?.current_activity || "",
-          energy: data.emotion?.energy || 50,
-        });
-        if (data.emotion?.current_emotion) {
-          setCurrentEmotion(data.emotion.current_emotion);
-        }
-        if (data.companion_code) {
-          setCompanionCode(data.companion_code);
-        }
-        const today = data.schedule?.xiaoman_today;
-        if (today?.mood) {
-          setTodayStatus(today.mood);
-        }
-      }
-    } catch {
-      // 静默失败
+    const data = await apiJson<any | null>(`/api/world/${userId}/xiaoman`, null);
+    if (!data) return;
+    setXiaomanStatus({
+      activity: data.schedule?.current_activity || "",
+      energy: data.emotion?.energy || 50,
+    });
+    if (data.emotion?.current_emotion) {
+      setCurrentEmotion(data.emotion.current_emotion);
+    }
+    if (data.companion_code) {
+      setCompanionCode(data.companion_code);
+    }
+    const today = data.schedule?.xiaoman_today;
+    if (today?.mood) {
+      setTodayStatus(today.mood);
     }
   }, [userId]);
-
   useEffect(() => {
     if (!onboarded) return;
     fetchXiaomanStatus();
@@ -172,7 +150,8 @@ export default function App() {
       socket.onopen = () => {
         connecting.current = false;
         setConnected(true);
-        socket.send(JSON.stringify({ type: "auth", userId }));
+        const accessToken = getAccessToken();
+        socket.send(JSON.stringify({ type: "auth", userId, ...(accessToken ? { accessToken } : {}) }));
         if (heartbeatTimer.current) clearInterval(heartbeatTimer.current);
         heartbeatTimer.current = setInterval(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -224,6 +203,12 @@ export default function App() {
 
           if (data.type === "error") {
             showToast(data.payload?.message || "发送失败");
+            setIsTyping(false);
+            return;
+          }
+
+          if (data.type === "auth_error") {
+            showToast(data.payload?.detail || "登录状态已失效");
             setIsTyping(false);
             return;
           }

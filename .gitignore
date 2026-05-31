@@ -15,7 +15,12 @@ npm-debug.log*
 .pnpm-debug.log*
 
 # Data & runtime files (DO NOT commit user data)
-backend-py/data/
+backend-py/data/diary/
+backend-py/data/lancedb/
+backend-py/data/memory/
+backend-py/data/sessions/
+backend-py/data/sessions_jsonl/
+backend-py/data/users/
 backend-py/data_*/
 
 # IDE
@@ -37,3 +42,20 @@ Thumbs.db
 # Build outputs
 web/dist/
 web/build/
+
+# Test and incremental build caches
+.pytest_cache/
+*.tsbuildinfo
+
+# Frontend runtime data
+web/data/
+
+# Local Python virtual environments
+backend-py/.venv/
+.venv/
+
+backend/dist/
+web/node_modules/.vite/
+
+# Local cleanup holding area
+_holding_*/

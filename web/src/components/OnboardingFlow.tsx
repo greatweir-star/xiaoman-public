@@ -1,4 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
+import {
+  COMPANION_STYLE_OPTIONS,
+  onboardingHeroUrl,
+  stylePortraitUrl,
+  stylePreviewUrl,
+} from "../lib/companionAvatar";
 
 const CANDIDATE_NAMES = ["桃桃", "鹿鸣", "阿梨", "小满"];
 const GRADES = [
@@ -9,11 +15,7 @@ const GRADES = [
   { value: 11, label: "高二" },
   { value: 12, label: "高三" },
 ];
-const STYLES = [
-  { id: "fresh", label: "清新动画", desc: "日系动画，新海诚式柔和光线" },
-  { id: "korean", label: "韩系插画", desc: "时尚插画，干净线条" },
-  { id: "watercolor", label: "温柔水彩", desc: "手绘质感，pastel色调" },
-];
+const STYLES = COMPANION_STYLE_OPTIONS;
 
 const ONBOARD_DRAFT_KEY = "xiaoman_onboard_draft";
 
@@ -104,7 +106,7 @@ export default function OnboardingFlow({
       {step === 0 && (
         <div className="step-splash">
           <img
-            src={`/styles/${splashStyle}.svg`}
+            src={onboardingHeroUrl(splashStyle)}
             alt="小满"
             className="splash-img splash-hero"
           />
@@ -179,7 +181,7 @@ export default function OnboardingFlow({
                   persistDraft({ step, style: s.id });
                 }}
               >
-                <img src={`/styles/${s.id}.svg`} alt={s.label} />
+                <img src={stylePreviewUrl(s.id)} alt={s.label} />
                 <div className="style-info">
                   <h3>{s.label}</h3>
                   <p>{s.desc}</p>
@@ -195,7 +197,7 @@ export default function OnboardingFlow({
         <div className="step-portrait">
           <p className="step-portrait-tag">今日同桌形象</p>
           <img
-            src={`/styles/${style}.svg`}
+            src={stylePortraitUrl(style)}
             alt="今日小满"
             className="portrait-splash-img"
           />

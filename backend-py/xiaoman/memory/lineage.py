@@ -25,7 +25,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+from xiaoman.paths import DATA_DIR
 
 
 class MemoryNode:

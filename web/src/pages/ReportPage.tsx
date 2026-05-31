@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useEffect, useState, useMemo } from "react";
 import ShareCard, { type ShareCardData } from "../components/ShareCard";
 
@@ -28,8 +29,6 @@ interface ReportPageProps {
   onBack: () => void;
   initialPeriod?: "weekly" | "monthly";
 }
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
 
 function formatShortDate(iso: string): string {
   try {
@@ -168,10 +167,8 @@ export default function ReportPage({ userId, onBack, initialPeriod = "weekly" }:
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_URL}/api/world/${userId}/reports/${period}`)
-      .then((r) => (r.ok ? r.json() : null))
+    apiJson<ReportData | null>(`/api/world/${userId}/reports/${period}`, null)
       .then((d) => d && setReport(d))
-      .catch(() => {})
       .finally(() => setLoading(false));
   }, [userId, period]);
 

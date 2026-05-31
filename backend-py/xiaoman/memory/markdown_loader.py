@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+from xiaoman.paths import DATA_DIR
 
 
 def load_global_memory_snippets() -> str:

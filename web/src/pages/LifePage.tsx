@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useState, useEffect } from "react";
 import XiaomanAvatar from "../components/XiaomanAvatar";
 
@@ -18,8 +19,6 @@ interface TimelineEntry {
   title: string;
   detail?: string;
 }
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
 
 const TYPE_LABELS: Record<string, string> = {
   period: "时段",
@@ -56,33 +55,24 @@ export default function LifePage({
   const [skillTree, setSkillTree] = useState({ level: 1, name: "新同桌", xp: 0, next_threshold: 20 });
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}/xiaoman`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setXiaomanData(d))
-      .catch(() => {});
+    apiJson<any | null>(`/api/world/${userId}/xiaoman`, null).then((d) => d && setXiaomanData(d));
   }, [userId]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}/timeline?limit=40`)
-      .then((r) => (r.ok ? r.json() : { entries: [] }))
-      .then((d) => setTimeline(d.entries || []))
-      .catch(() => setTimeline([]));
+    apiJson<{ entries?: TimelineEntry[] }>(`/api/world/${userId}/timeline?limit=40`, { entries: [] }).then((d) => setTimeline(d.entries || []));
   }, [userId]);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/world/${userId}/skill-tree`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d) {
-          setSkillTree({
-            level: d.level ?? 1,
-            name: d.name ?? "新同桌",
-            xp: d.xp ?? 0,
-            next_threshold: d.next_threshold ?? 20,
-          });
-        }
-      })
-      .catch(() => {});
+    apiJson<any | null>(`/api/world/${userId}/skill-tree`, null).then((d) => {
+      if (d) {
+        setSkillTree({
+          level: d.level ?? 1,
+          name: d.name ?? "\u65b0\u540c\u684c",
+          xp: d.xp ?? 0,
+          next_threshold: d.next_threshold ?? 20,
+        });
+      }
+    });
   }, [userId]);
 
   const emotion = xiaomanData?.emotion || {};

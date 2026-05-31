@@ -57,7 +57,11 @@ def test_phase0_blocks_sleep_period(monkeypatch):
     assert result.block_reply
 
 
-def test_phase0_guess_mood_every_third_turn():
+def test_phase0_guess_mood_every_third_turn(monkeypatch):
+    monkeypatch.setattr(
+        "xiaoman.dialogue.triggers.is_night_sleep_period",
+        lambda dt=None: False,
+    )
     result = check_phase0_triggers(
         user_message="嗨",
         message_count=3,

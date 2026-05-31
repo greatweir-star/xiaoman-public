@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   emotionAvatarUrl,
+  normalizeAvatarAssetUrl,
   stylePortraitCandidates,
 } from "../lib/companionAvatar";
 
@@ -51,13 +52,17 @@ export default function XiaomanAvatar({
   const overlayType = getEmotionOverlay(emotion);
 
   const candidates = useMemo(() => {
+    const override = normalizeAvatarAssetUrl(srcOverride);
+    const portraits = override
+      ? [override, ...stylePortraitCandidates(style)]
+      : stylePortraitCandidates(style);
     if (mode === "emotion") {
       const emo = emotionAvatarUrl(emotion);
-      if (emo) return [emo, ...stylePortraitCandidates(style)];
-      return stylePortraitCandidates(style);
+      return [...portraits, ...(emo ? [emo] : [])].filter(
+        (url, index, urls) => urls.indexOf(url) === index,
+      );
     }
-    if (srcOverride) return [srcOverride, ...stylePortraitCandidates(style)];
-    return stylePortraitCandidates(style);
+    return portraits.filter((url, index, urls) => urls.indexOf(url) === index);
   }, [mode, emotion, srcOverride, style]);
 
   const [srcIndex, setSrcIndex] = useState(0);

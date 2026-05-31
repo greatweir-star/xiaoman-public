@@ -1,6 +1,8 @@
+import { apiFetch, apiJson } from "../lib/backend";
 import { useState, useEffect } from "react";
 import {
   COMPANION_STYLE_OPTIONS,
+  stylePreviewUrl,
   type CompanionStyle,
 } from "../lib/companionAvatar";
 
@@ -10,8 +12,6 @@ interface SettingsPageProps {
   onStyleChange: (style: CompanionStyle) => void;
   onNavigate: (view: "xiaoman-world" | "user-world") => void;
 }
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
 
 interface SecretItem {
   id?: string;
@@ -70,10 +70,8 @@ export default function SettingsPage({
 
   const loadSecrets = (reveal: boolean) => {
     setLoadingSecrets(true);
-    fetch(`${API_URL}/api/memory/${userId}/secrets?reveal=${reveal}`)
-      .then((r) => (r.ok ? r.json() : { secrets: [] }))
+    apiJson<{ secrets?: SecretItem[] }>(`/api/memory/${userId}/secrets?reveal=${reveal}`, { secrets: [] })
       .then((d) => setSecrets(d.secrets || []))
-      .catch(() => setSecrets([]))
       .finally(() => setLoadingSecrets(false));
   };
 
@@ -82,21 +80,15 @@ export default function SettingsPage({
   }, [userId]);
 
   const fetchParentalConfig = () => {
-    fetch(`${API_URL}/api/world/${userId}/parental`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d) setCfg({ ...defaultConfig, ...d });
-      })
-      .catch(() => {});
+    apiJson<Partial<ParentalConfig> | null>(`/api/world/${userId}/parental`, null).then((d) => {
+      if (d) setCfg({ ...defaultConfig, ...d });
+    });
   };
 
   const fetchUsage = () => {
-    fetch(`${API_URL}/api/world/${userId}/usage`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d) setUsage(d);
-      })
-      .catch(() => {});
+    apiJson<UsageStats | null>(`/api/world/${userId}/usage`, null).then((d) => {
+      if (d) setUsage(d);
+    });
   };
 
   useEffect(() => {
@@ -123,7 +115,7 @@ export default function SettingsPage({
     setSavingStyle(true);
     setStyleSaved(false);
     try {
-      const res = await fetch(`${API_URL}/api/world/${userId}/identity`, {
+      const res = await apiFetch(`/api/world/${userId}/identity`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ style: next }),
@@ -156,7 +148,7 @@ export default function SettingsPage({
         ...cfg,
         password: cfg.password || passwordInput,
       };
-      const res = await fetch(`${API_URL}/api/world/${userId}/parental`, {
+      const res = await apiFetch(`/api/world/${userId}/parental`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ config: body, password: passwordInput }),
@@ -325,7 +317,7 @@ export default function SettingsPage({
               disabled={savingStyle}
               onClick={() => handlePickStyle(s.id)}
             >
-              <img src={`/styles/${s.id}.svg`} alt={s.label} />
+              <img src={stylePreviewUrl(s.id)} alt={s.label} />
               <div className="style-info">
                 <h3>{s.label}</h3>
                 <p>{s.desc}</p>

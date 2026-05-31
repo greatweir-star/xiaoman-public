@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useState, useEffect, useRef } from "react";
 import SkillTree from "../components/SkillTree";
 import XiaomanAvatar from "../components/XiaomanAvatar";
@@ -71,8 +72,6 @@ interface ChatPageProps {
   userId?: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
-
 export default function ChatPage({
   config,
   messages,
@@ -117,13 +116,9 @@ export default function ChatPage({
   // 拉取 usage 数据，每 5 分钟刷新
   useEffect(() => {
     if (!userId) return;
-    const fetchUsage = () => {
-      fetch(`${API_URL}/api/world/${userId}/usage`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d) setUsage(d);
-        })
-        .catch(() => {});
+    const fetchUsage = async () => {
+      const data = await apiJson<UsageStats | null>(`/api/world/${userId}/usage`, null);
+      if (data) setUsage(data);
     };
     fetchUsage();
     const timer = setInterval(fetchUsage, 5 * 60 * 1000);

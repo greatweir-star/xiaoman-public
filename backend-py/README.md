@@ -1,101 +1,73 @@
-# 小满后端（Python）
+# Xiaoman Python backend
 
-## Python 版本要求
+This is the current main backend for Xiaoman. It runs FastAPI + WebSocket from `main.py` on port `18789`.
 
-**必须使用 Python 3.14**（Alice 系统自带的 Python 3.11 不兼容 LanceDB）
+## Local setup
 
-```bash
-# Python 3.14 路径
-C:\Python314\python.exe
-
-# 安装依赖
-C:\Python314\python.exe -m pip install -r requirements.txt
+```powershell
+cd D:\Alice\Projects\xiaoman\backend-py
+C:\Users\86176\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 0.0.0.0 --port 18789
 ```
 
-## 启动方式
+The verified local runtime is Python 3.12.13 from the bundled Codex runtime. The system Python launcher on this machine may not point at an installed Python.
 
-### 方式一：直接启动
+## Environment
 
-```bash
-# Windows
-start_server.bat
+Copy `backend-py/.env.example` or set these variables in your shell:
 
-# 或手动
-C:\Python314\python.exe main.py
+```powershell
+$env:XIAOMAN_DATA_DIR="D:\Alice\Projects\xiaoman\backend-py\data"
+$env:XIAOMAN_ENABLE_DREAMING_SCHEDULER="false"
+$env:LLM_API_KEY="your_api_key_here"
+$env:LLM_BASE_URL="https://api.pipellm.ai/openai/v1"
+$env:LLM_MODEL="gpt-4o-mini"
+$env:XIAOMAN_SECRET_KEY="change-me-before-real-secret-storage"
 ```
 
-### 方式二：Docker
+Notes:
 
-```bash
-docker-compose up --build
+- `LLM_API_KEY` is required for real LLM calls. It is no longer stored in `xiaoman.json` or start scripts.
+- `XIAOMAN_DATA_DIR` separates local/dev/prod data roots.
+- `XIAOMAN_ENABLE_DREAMING_SCHEDULER=false` keeps the background scheduler disabled during development.
+- `XIAOMAN_SECRET_KEY` should be changed before storing real L7 secrets.
+
+## Tests
+
+```powershell
+cd D:\Alice\Projects\xiaoman\backend-py
+.\.venv\Scripts\python.exe -m pytest -q
 ```
 
-## 环境变量
+Current verified result: `104 passed, 2 warnings`.
 
-```bash
-# 必需
-LLM_API_KEY=your_api_key_here
+## Docker
 
-# 可选 — 对话 LLM
-LLM_BASE_URL=https://api.pipellm.ai/openai/v1
-LLM_MODEL=gpt-4o-mini
-LOG_LEVEL=INFO
+The root `docker-compose.yml` now builds this backend.
 
-# 可选 — 每日形象生图（无配置时使用 /styles/*.svg 轮换）
-# 方式 A：固定 CDN 图（不调用远端）
-DAILY_AVATAR_IMAGE_HOOK=https://cdn.example.com/xiaoman-today.png
-
-# 方式 B：OpenAI 兼容 images/generations（需同时设置 base + key）
-DAILY_AVATAR_IMAGE_API_URL=https://api.openai.com/v1
-XIAOMAN_IMAGE_API_KEY=sk-...
-# 可选细化
-XIAOMAN_IMAGE_MODEL=dall-e-3
-XIAOMAN_IMAGE_SIZE=1024x1024
+```powershell
+cd D:\Alice\Projects\xiaoman
+docker compose up --build
 ```
 
-也可在 `xiaoman.json` 的 `dailyAvatar.imageApiHook` 写入静态图 URL。
+Docker mounts `backend-py/data` to `/app/data` and sets `XIAOMAN_DATA_DIR=/app/data`.
 
-## 项目结构
+## Data boundary
 
-```
+See `backend-py/data/README.md`. In short, `templates/` and `global/` are seed data; `users/`, `sessions*/`, `lancedb/`, `memory/`, and `diary/` are runtime data and must not contain committed real user data.
+
+## Structure
+
+```text
 backend-py/
-├── main.py                 # FastAPI WebSocket 入口
-├── requirements.txt        # 依赖（含 LanceDB）
-├── start_server.bat        # Windows 启动脚本
-├── xiaoman/
-│   ├── chunk.py           # ChunkTable/ChunkRow
-│   ├── session.py         # XiaomanSession
-│   ├── tool_registry.py   # Tool 注册表
-│   ├── loop.py            # Session-first Loop
-│   ├── llm_service.py     # LLM 封装
-│   ├── prompts.py         # System Prompt
-│   ├── compaction.py      # Session 压缩
-│   ├── persistence.py     # JSONL 持久化
-│   ├── errors.py          # 错误处理
-│   ├── memory/            # 记忆模块
-│   │   ├── engine.py      # 记忆引擎
-│   │   ├── store.py       # 存储层
-│   │   ├── extractor.py   # Forked Agent 提取
-│   │   ├── dreaming.py    # 自动整理
-│   │   ├── search.py      # 混合搜索
-│   │   ├── lineage.py     # 血缘追踪
-│   │   ├── promotion.py   # 记忆提升
-│   │   └── vector_store.py # LanceDB 向量存储
-│   └── tools/             # Tool 实现
-│       ├── memory_update.py
-│       ├── emotion_detect.py
-│       ├── time_sense.py
-│       └── night_guard.py
-└── data/                   # 数据目录
-    ├── memory/             # 记忆文件
-    ├── sessions/           # 会话文件
-    ├── life-log/           # 生活日志
-    └── lancedb/            # LanceDB 向量数据库
+|-- main.py                  # FastAPI / WebSocket entrypoint
+|-- requirements.txt         # Python dependencies
+|-- xiaoman.json             # non-secret model and product config
+|-- xiaoman/paths.py         # centralized data directory resolution
+|-- xiaoman/world/           # L1-L8 world system
+|-- xiaoman/memory/          # memory, dreaming, LanceDB integration
+|-- xiaoman/dialogue/        # dialogue config and prompting
+|-- xiaoman/tools/           # local tools
+|-- tests/                   # pytest suite
 ```
-
-## LanceDB 向量数据库
-
-- **存储路径**：`data/lancedb/`
-- **维度**：3072（OpenAI text-embedding-3-large）
-- **表结构**：每个 session 独立一张表
-- **混合搜索**：向量 + 全文（FTS）

@@ -49,7 +49,11 @@ def test_crisis_normal_chat():
     assert check_crisis("今天作业好多").triggered is False
 
 
-def test_phase0_rest_reminder_at_15_turns():
+def test_phase0_rest_reminder_at_15_turns(monkeypatch):
+    monkeypatch.setattr(
+        "xiaoman.dialogue.triggers.is_night_sleep_period",
+        lambda dt=None: False,
+    )
     r = check_phase0_triggers(
         user_message="嗨",
         message_count=15,

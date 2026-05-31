@@ -32,7 +32,7 @@ def test_api_stub_returns_none_without_remote(monkeypatch):
     monkeypatch.delenv("XIAOMAN_IMAGE_API_KEY", raising=False)
     assert fetch_generated_image_url(style="korean", day="2026-05-27") is None
     meta = resolve_daily_avatar(style="korean")
-    assert meta["url"].startswith("/styles/")
+    assert meta["url"].startswith("/assets/xiaoman/avatar/styles/")
 
 
 def test_image_configured_with_api_key(monkeypatch):

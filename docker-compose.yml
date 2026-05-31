@@ -2,14 +2,19 @@ version: "3.8"
 
 services:
   xiaoman-backend:
-    build: ./backend
+    build:
+      context: ./backend-py
     ports:
       - "18789:18789"
     volumes:
-      - ./data:/data
+      - ./backend-py/data:/app/data
     environment:
-      - NODE_ENV=production
-      - XIAOMAN_DATA_DIR=/data
+      - PYTHONUNBUFFERED=1
+      - XIAOMAN_DATA_DIR=/app/data
+      - XIAOMAN_ENABLE_DREAMING_SCHEDULER=false
+      - LLM_API_KEY=${LLM_API_KEY:-}
+      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.pipellm.ai/openai/v1}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
 
   xiaoman-web:
     build: ./web

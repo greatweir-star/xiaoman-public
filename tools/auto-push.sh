@@ -97,9 +97,12 @@ sync_public() {
         return 1
     fi
 
-    # 从 private 同步源码（排除数据、文档等非公开内容）
+    # 从 private 同步源码（排除数据、文档、依赖等非公开内容）
     rsync -av --delete \
         --exclude='.git/' \
+        --exclude='node_modules/' \
+        --exclude='dist/' \
+        --exclude='build/' \
         --exclude='data/' \
         --exclude='data_*/' \
         --exclude='__pycache__/' \
@@ -108,8 +111,11 @@ sync_public() {
     rsync -av --delete \
         --exclude='.git/' \
         --exclude='data/' \
+        --exclude='data_*/' \
         --exclude='node_modules/' \
         --exclude='__pycache__/' \
+        --exclude='*.pyc' \
+        --exclude='.env*' \
         "$PRIVATE_DIR/backend-py/" "$PUBLIC_DIR/backend-py/"
 
     rsync -av --delete \
@@ -117,10 +123,14 @@ sync_public() {
         --exclude='node_modules/' \
         --exclude='dist/' \
         --exclude='build/' \
+        --exclude='data/' \
+        --exclude='data_*/' \
+        --exclude='.vite/' \
         "$PRIVATE_DIR/web/" "$PUBLIC_DIR/web/"
 
     rsync -av --delete \
         --exclude='.git/' \
+        --exclude='sync.log' \
         "$PRIVATE_DIR/tools/" "$PUBLIC_DIR/tools/"
 
     cp "$PRIVATE_DIR/docker-compose.yml" "$PUBLIC_DIR/"

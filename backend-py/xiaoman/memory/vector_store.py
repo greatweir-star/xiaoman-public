@@ -20,7 +20,7 @@ from xiaoman.llm_service import LLMClient
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+from xiaoman.paths import DATA_DIR
 DB_PATH = os.path.join(DATA_DIR, "lancedb")
 
 # LanceDB 表结构

@@ -1,3 +1,8 @@
 @echo off
-set LLM_API_KEY=pipe-f0de69bc8255f7b71d0613337e4b7b686b38a545a7e8d602d1887030103df845
-C:\Python314\python.exe main.py
+chcp 65001 >nul
+set SCRIPT_DIR=%~dp0
+set PYTHON=%SCRIPT_DIR%.venv\Scripts\python.exe
+if not exist "%PYTHON%" set PYTHON=python
+if "%LLM_API_KEY%"=="" echo [xiaoman] LLM_API_KEY is not set; set it in your shell or .env before production use.
+cd /d "%SCRIPT_DIR%"
+"%PYTHON%" main.py

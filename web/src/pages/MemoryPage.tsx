@@ -1,11 +1,10 @@
+import { apiJson, apiPostJson } from "../lib/backend";
 import { useState, useEffect, useCallback } from "react";
 
 interface MemoryPageProps {
   userId: string;
   onBack: () => void;
 }
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
 
 interface MemoryItem {
   fact?: string;
@@ -37,16 +36,13 @@ export default function MemoryPage({ userId, onBack }: MemoryPageProps) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, memRes] = await Promise.all([
-        fetch(`${API_URL}/api/memory/${userId}/stats`),
-        fetch(`${API_URL}/api/memory/${userId}`),
+      const [statsData, memoryData] = await Promise.all([
+        apiJson<MemoryStats | null>(`/api/memory/${userId}/stats`, null),
+        apiJson<{ organized?: MemoryItem[]; facts?: MemoryItem[] }>(`/api/memory/${userId}`, {}),
       ]);
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (memRes.ok) {
-        const data = await memRes.json();
-        const list = data.organized?.length ? data.organized : data.facts || [];
-        setOrganized(list);
-      }
+      if (statsData) setStats(statsData);
+      const list = memoryData.organized?.length ? memoryData.organized : memoryData.facts || [];
+      setOrganized(list);
     } catch {
       setMessage("加载失败，请确认后端已启动");
     } finally {
@@ -64,13 +60,8 @@ export default function MemoryPage({ userId, onBack }: MemoryPageProps) {
       return;
     }
     try {
-      const res = await fetch(
-        `${API_URL}/api/memory/${userId}?query=${encodeURIComponent(searchQuery)}&top_k=8`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSearchResults(data.memories || []);
-      }
+      const data = await apiJson<{ memories?: MemoryItem[] }>(`/api/memory/${userId}?query=${encodeURIComponent(searchQuery)}&top_k=8`, { memories: [] });
+      setSearchResults(data.memories || []);
     } catch {
       setMessage("搜索失败");
     }
@@ -82,50 +73,44 @@ export default function MemoryPage({ userId, onBack }: MemoryPageProps) {
     setAdding(true);
     setMessage("");
     try {
-      const isSelfName = /我(?:的名字)?叫[\u4e00-\u9fa5a-zA-Z·]{1,12}/.test(text);
-      const res = await fetch(`${API_URL}/api/memory/${userId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          isSelfName
-            ? { fact: text, category: "identity", layer: "L1" }
-            : { fact: text, category: "preference", layer: "L7" }
-        ),
-      });
-      if (res.ok) {
-        const data = await res.json();
+      const isSelfName = /(?:\u6211|\u4f60)(?:\u7684\u540d\u5b57)?(?:\u662f|\u53eb)[\u4e00-\u9fa5a-zA-Z\u00b7]{1,12}/.test(text);
+      const data = await apiPostJson<{ deduplicated?: boolean } | null>(
+        `/api/memory/${userId}`,
+        isSelfName
+          ? { fact: text, category: "identity", layer: "L1" }
+          : { fact: text, category: "preference", layer: "L7" },
+        null
+      );
+      if (data) {
         setNewFact("");
-        setMessage(data.deduplicated ? "已存在相同记忆" : "已保存");
+        setMessage(data.deduplicated ? "\u5df2\u5b58\u5728\u76f8\u540c\u8bb0\u5fc6" : "\u5df2\u4fdd\u5b58");
         loadData();
       } else {
-        setMessage("保存失败");
+        setMessage("\u4fdd\u5b58\u5931\u8d25");
       }
     } catch {
-      setMessage("保存失败");
+      setMessage("\u4fdd\u5b58\u5931\u8d25");
     } finally {
       setAdding(false);
     }
   };
-
   const handleDreaming = async () => {
     setDreaming(true);
     setMessage("");
     try {
-      const res = await fetch(`${API_URL}/api/memory/${userId}/dreaming`, { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setMessage(`整理完成 · 提升 ${data.promoted_count ?? 0} 条长期记忆`);
+      const data = await apiPostJson<{ promoted_count?: number } | null>(`/api/memory/${userId}/dreaming`, undefined, null);
+      if (data) {
+        setMessage(`\u6574\u7406\u5b8c\u6210 \u00b7 \u63d0\u5347 ${data.promoted_count ?? 0} \u6761\u957f\u671f\u8bb0\u5fc6`);
         loadData();
       } else {
-        setMessage("整理失败");
+        setMessage("\u6574\u7406\u5931\u8d25");
       }
     } catch {
-      setMessage("无法连接后端");
+      setMessage("\u65e0\u6cd5\u8fde\u63a5\u540e\u7aef");
     } finally {
       setDreaming(false);
     }
   };
-
   const displayList = searchResults ?? organized;
   const factText = (m: MemoryItem) => m.fact || m.content || "";
 

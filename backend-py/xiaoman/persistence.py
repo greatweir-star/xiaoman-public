@@ -19,7 +19,7 @@ from xiaoman.session import XiaomanSession
 
 logger = logging.getLogger(__name__)
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+from xiaoman.paths import DATA_DIR
 
 
 def _ensure_dir(path: str) -> None:

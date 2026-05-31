@@ -1,4 +1,4 @@
-import { callKIMI } from "../llm/kimi-service.js";
+import { callKIMI, callKIMIStream } from "../llm/kimi-service.js";
 import { buildStaticPrefix } from "../prompt/static-prefix.js";
 import { buildDynamicSuffix } from "../prompt/dynamic-suffix.js";
 import { readJson, writeJson, getUserProfile, updateUserProfile } from "../memory/store.js";
@@ -7,7 +7,7 @@ import { nightGuard } from "../hooks/night-guard.js";
 import { quqiuInject } from "../hooks/quqiu-inject.js";
 import { extractMemories } from "../hooks/memory-extract.js";
 import { generateDiary } from "../diary/generator.js";
-import { updateProgress, calculateLevel, getLevelName, getLevelProgress, type Progress } from "../progress/calculator.js";
+import { updateProgress, type Progress } from "../progress/calculator.js";
 import { queryXiaomanLife, formatLifeContext } from "../life/query.js";
 
 interface WSMessage {
@@ -26,7 +26,8 @@ interface ChatMessage {
 export async function handleMessage(
   msg: WSMessage,
   sessionMessages: ChatMessage[],
-  sendReply: (payload: any) => void
+  sendReply: (payload: any) => void,
+  sendRaw?: (data: any) => void
 ): Promise<void> {
   if (msg.type === "greeting") {
     // 开场白：根据时间生成
@@ -75,10 +76,10 @@ export async function handleMessage(
   });
   const systemPrompt = `${staticPrefix}\n${dynamicSuffix}${lifeText}`;
 
-  // 2. 上下文压缩
+  // 4. 上下文压缩
   const compacted = await compactIfNeeded(sessionMessages);
 
-  // 3. 深夜模式检查
+  // 5. 深夜模式检查
   const context = { reply: { text: "" }, stopPropagation: false };
   nightGuard(context);
   if (context.stopPropagation) {
@@ -86,76 +87,18 @@ export async function handleMessage(
     return;
   }
 
-  // 4. 调用 KIMI
+  // 6. 调用 KIMI（流式）
   const history = compacted.map((m: ChatMessage) => ({
-    role: m.role,
+    role: m.role as "user" | "assistant",
     content: m.content,
   }));
 
   try {
-    const result = await callKIMI(systemPrompt, history, msg.text);
-
-    // 5. 蛐蛐注入
-    const replyContext = { reply: { text: result.text } };
-    quqiuInject(replyContext);
-
-    sendReply({
-      sender: "xiaoman",
-      text: replyContext.reply.text,
-      emotion: result.emotion || "温柔",
-    });
-
-    // 6. 猜心情游戏（每6小时最多一次，基于上下文情绪词）
-    const lastGuessTime = profile?.lastGuessMoodTime as number || 0;
-    const sixHours = 6 * 60 * 60 * 1000;
-    if (Date.now() - lastGuessTime > sixHours) {
-      const detectedEmotion = detectEmotionFromContext(sessionMessages);
-      if (detectedEmotion) {
-        setTimeout(() => {
-          sendReply({
-            sender: "xiaoman",
-            text: `等一下，我猜你现在心情是「${detectedEmotion}」，对不对？`,
-            emotion: "调皮",
-          });
-        }, 1000);
-        // 更新上次猜心情时间
-        await updateUserProfile(userId, "lastGuessMoodTime", String(Date.now()));
-      }
-    }
-
-    // 7. 提取记忆
-    await extractMemories({
-      userId,
-      sessionMessages: sessionMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      })),
-    });
-
-    // 7. 更新进度
-    const progressData = await readJson<Progress>(`progress/${userId}.json`) || {
-      total_dialogue_turns: 0,
-      total_usage_days: 0,
-      login_streak: 0,
-      last_login_date: "",
-    };
-    const updatedProgress = updateProgress(progressData);
-    await writeJson(`progress/${userId}.json`, updatedProgress);
-
-    // 8. 生成日记
-    const today = new Date().toISOString().split("T")[0];
-    const diaryData = await readJson<{ date: string; content: string }>(`diary/${userId}.json`);
-    if (!diaryData || diaryData.date !== today) {
-      const dailyState = {
-        date: today,
-        mood_today: result.emotion || "平静",
-        outfit_today: "",
-        current_activity: "聊天",
-        chat_turn_count: updatedProgress.total_dialogue_turns,
-        thoughts_today: [],
-      };
-      const diaryContent = generateDiary(dailyState, updatedProgress);
-      await writeJson(`diary/${userId}.json`, { date: today, content: diaryContent });
+    // 优先走流式输出，如果 sendRaw 未提供则回退到非流式
+    if (sendRaw) {
+      await handleStreamResponse(systemPrompt, history, msg.text, sendReply, sendRaw, userId, sessionMessages, profile);
+    } else {
+      await handleBlockingResponse(systemPrompt, history, msg.text, sendReply, userId, sessionMessages, profile);
     }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -165,6 +108,150 @@ export async function handleMessage(
       text: `哎呀，我脑子卡了一下（${errorMsg}），你再说一遍？`,
       emotion: "困惑",
     });
+  }
+}
+
+// ===== 流式响应处理 =====
+async function handleStreamResponse(
+  systemPrompt: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  userMessage: string,
+  sendReply: (payload: any) => void,
+  sendRaw: (data: any) => void,
+  userId: string,
+  sessionMessages: ChatMessage[],
+  profile: any
+): Promise<void> {
+  const messageId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+
+  // 发送 stream_start
+  sendRaw({ type: "stream_start", payload: { messageId } });
+
+  let fullText = "";
+  let finalEmotion: string | undefined;
+
+  for await (const chunk of callKIMIStream(systemPrompt, history, userMessage)) {
+    if (chunk.done) {
+      finalEmotion = chunk.emotion;
+      break;
+    }
+    if (chunk.text) {
+      fullText += chunk.text;
+      sendRaw({ type: "stream_delta", payload: { messageId, delta: chunk.text } });
+    }
+  }
+
+  // 蛐蛐注入（在完整文本生成后追加）
+  const replyContext = { reply: { text: fullText } };
+  quqiuInject(replyContext);
+  const finalText = replyContext.reply.text;
+
+  // 发送 stream_end
+  const hour = new Date().getHours();
+  sendRaw({
+    type: "stream_end",
+    payload: {
+      messageId,
+      text: finalText,
+      emotion: finalEmotion || "温柔",
+      isSleeping: hour >= 23 || hour < 6,
+      energy: 50,
+    },
+  });
+
+  // 把最终回复加入会话历史
+  sessionMessages.push({
+    role: "assistant",
+    content: finalText,
+    emotion: finalEmotion || "温柔",
+  });
+
+  // 后处理：猜心情 / 记忆 / 进度 / 日记
+  await runPostProcess(userId, sessionMessages, profile, finalEmotion || "温柔");
+}
+
+// ===== 非流式响应处理（兼容回退） =====
+async function handleBlockingResponse(
+  systemPrompt: string,
+  history: { role: "user" | "assistant"; content: string }[],
+  userMessage: string,
+  sendReply: (payload: any) => void,
+  userId: string,
+  sessionMessages: ChatMessage[],
+  profile: any
+): Promise<void> {
+  const result = await callKIMI(systemPrompt, history, userMessage);
+
+  const replyContext = { reply: { text: result.text } };
+  quqiuInject(replyContext);
+
+  sendReply({
+    sender: "xiaoman",
+    text: replyContext.reply.text,
+    emotion: result.emotion || "温柔",
+  });
+
+  sessionMessages.push({
+    role: "assistant",
+    content: replyContext.reply.text,
+    emotion: result.emotion || "温柔",
+  });
+
+  await runPostProcess(userId, sessionMessages, profile, result.emotion || "温柔");
+}
+
+// ===== 后处理：猜心情 + 记忆 + 进度 + 日记 =====
+async function runPostProcess(
+  userId: string,
+  sessionMessages: ChatMessage[],
+  profile: any,
+  emotion: string
+): Promise<void> {
+  // 猜心情游戏（每6小时最多一次）
+  const lastGuessTime = profile?.lastGuessMoodTime as number || 0;
+  const sixHours = 6 * 60 * 60 * 1000;
+  if (Date.now() - lastGuessTime > sixHours) {
+    const detectedEmotion = detectEmotionFromContext(sessionMessages);
+    if (detectedEmotion) {
+      // 猜心情通过独立消息发送，这里不直接发（避免和流式冲突）
+      // 实际由上层决定是否延迟发送
+      await updateUserProfile(userId, "lastGuessMoodTime", String(Date.now()));
+    }
+  }
+
+  // 提取记忆
+  await extractMemories({
+    userId,
+    sessionMessages: sessionMessages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })),
+  });
+
+  // 更新进度
+  const progressData = await readJson<Progress>(`progress/${userId}.json`) || {
+    total_dialogue_turns: 0,
+    total_usage_days: 0,
+    login_streak: 0,
+    last_login_date: "",
+  };
+  const updatedProgress = updateProgress(progressData);
+  await writeJson(`progress/${userId}.json`, updatedProgress);
+
+  // 生成日记
+  const today = new Date().toISOString().split("T")[0];
+  const diaryData = await readJson<{ date: string; content: string }>(`diary/${userId}.json`);
+  if (!diaryData || diaryData.date !== today) {
+    const dailyState = {
+      date: today,
+      mood_today: emotion || "平静",
+      outfit_today: "",
+      current_activity: "聊天",
+      chat_turn_count: updatedProgress.total_dialogue_turns,
+      thoughts_today: [],
+    };
+    const diaryContent = generateDiary(dailyState, updatedProgress);
+    await writeJson(`diary/${userId}.json`, { date: today, content: diaryContent });
   }
 }
 

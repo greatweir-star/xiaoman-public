@@ -37,9 +37,13 @@
     "provider": "pipellm",
     "baseUrl": "https://api.pipellm.ai/openai/v1",
     "modelId": "gpt-4o-mini",
-    "apiKey": "pipe-f0de69bc8255f7b71d0613337e4b7b686b38a545a7e8d602d1887030103df845",
+    "apiKey": "",
     "apiKeyEnv": "LLM_API_KEY",
     "temperature": 0.8,
     "maxTokens": 512
+  },
+  "dailyAvatar": {
+    "assetRoot": "/assets/xiaoman/avatar",
+    "configFile": "web/src/config/xiaoman-avatar-assets.json"
   }
 }

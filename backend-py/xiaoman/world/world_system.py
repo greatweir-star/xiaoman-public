@@ -17,7 +17,7 @@ from xiaoman.world.l8_dialogue import DialogueLayer
 from xiaoman.time_service import TimeService
 from xiaoman.world.linkage_engine import LinkageEngine
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+from xiaoman.paths import DATA_DIR
 TEMPLATES_DIR = os.path.join(DATA_DIR, "templates")
 
 TIME_MODE_HINTS = {

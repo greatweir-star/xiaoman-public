@@ -25,18 +25,6 @@ class LLMClient:
         self.temperature = temperature
         self.max_tokens = max_tokens
         
-        # 如果没有 api_key，尝试从 xiaoman.json 读取
-        if not self.api_key:
-            try:
-                import json
-                config_path = os.path.join(os.path.dirname(__file__), "..", "xiaoman.json")
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                    self.api_key = config.get("model", {}).get("apiKey", "")
-            except Exception:
-                pass
-        
-        # 设置 OPENAI_API_KEY 环境变量（openai 库需要）
         if self.api_key:
             os.environ["OPENAI_API_KEY"] = self.api_key
         

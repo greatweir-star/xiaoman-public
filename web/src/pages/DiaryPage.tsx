@@ -1,3 +1,4 @@
+import { apiJson } from "../lib/backend";
 import { useState, useEffect } from "react";
 
 interface DiaryEntry {
@@ -12,21 +13,16 @@ interface DiaryPageProps {
   onBack: () => void;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:18789";
-
 export default function DiaryPage({ userId, onBack }: DiaryPageProps) {
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_URL}/api/memory/${userId}/diary`)
-      .then((r) => (r.ok ? r.json() : { entries: [] }))
-      .then((d) => {
-        const list: DiaryEntry[] = d.entries || [];
-        list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-        setEntries(list);
-      })
-      .catch(() => setEntries([]));
+    apiJson<{ entries?: DiaryEntry[] }>(`/api/memory/${userId}/diary`, { entries: [] }).then((d) => {
+      const list: DiaryEntry[] = d.entries || [];
+      list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+      setEntries(list);
+    });
   }, [userId]);
 
   return (

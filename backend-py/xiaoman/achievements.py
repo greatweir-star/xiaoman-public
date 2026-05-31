@@ -9,7 +9,7 @@ from typing import Any
 
 from xiaoman.life_timeline import list_events as timeline_list
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+from xiaoman.paths import DATA_DIR
 
 ACHIEVEMENT_DEFS: dict[str, dict[str, Any]] = {
     "first_vent": {

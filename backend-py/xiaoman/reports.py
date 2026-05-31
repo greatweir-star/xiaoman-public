@@ -10,7 +10,7 @@ from typing import Any
 from xiaoman.life_timeline import list_events as timeline_list
 from xiaoman.achievements import _load_achievements, ACHIEVEMENT_DEFS
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+from xiaoman.paths import DATA_DIR
 
 EMOTION_VALUES: dict[str, int] = {
     "开心": 20,

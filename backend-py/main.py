@@ -20,9 +20,11 @@ import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.auth.routes import router as auth_router
+from app.legacy_security import LegacyApiAuthMiddleware, resolve_ws_auth_user_id
 from xiaoman.chunk import ChunkKind, ChunkRow, user_text_chunk
 from xiaoman.compaction import compact_chunk_table
 from xiaoman.llm_service import LLMClient
@@ -105,6 +107,8 @@ from xiaoman.ws_events import (
 from xiaoman.ws_protocol import new_stream_message_id
 from xiaoman.achievements import check_achievements, get_achievements_state
 from xiaoman.reports import get_latest_weekly_report, get_latest_monthly_report
+from xiaoman.life_log import list_logs as life_log_list
+from xiaoman.paths import DATA_DIR
 
 # --- 结构化日志 ---
 logging.basicConfig(
@@ -123,6 +127,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(LegacyApiAuthMiddleware)
+app.include_router(auth_router)
 
 # --- 全局实例 ---
 llm_client = LLMClient()
@@ -162,8 +168,6 @@ StudyGuideTool.bind_world(get_world)
 memory_engine.set_world_getter(lambda uid: world_systems.get(uid) or get_world(uid))
 
 # --- 数据目录 ---
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-os.makedirs(DATA_DIR, exist_ok=True)
 
 
 def load_profile(user_id: str) -> dict[str, Any]:
@@ -205,7 +209,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 continue
 
             if msg_type == "auth":
-                user_id = msg.get("userId", "")
+                try:
+                    user_id = resolve_ws_auth_user_id(msg)
+                except HTTPException as exc:
+                    await websocket.send_json({"type": "auth_error", "payload": {"detail": exc.detail}})
+                    await websocket.close(code=4401 if exc.status_code == 401 else 4403)
+                    return
                 resume = bool(msg.get("resume"))
                 session.user_id = user_id
                 session.id = user_id or session.id
@@ -1024,34 +1033,24 @@ async def update_identity(user_id: str, data: dict):
         "honeymoon_active": is_honeymoon_active(world.user_data_dir),
     }
 
-# 启动 Dreaming 定时线程
-dreaming_thread = threading.Thread(target=dreaming_scheduler, daemon=True)
-dreaming_thread.start()
+# Dreaming scheduler is optional. Keep it off by default for local development,
+# tests, and short-lived containers; enable with XIAOMAN_ENABLE_DREAMING_SCHEDULER=true.
+def _env_flag(name: str, default: bool = False) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-# === V0.03 成就与报告路由 ===
-@app.get("/api/world/{user_id}/achievements")
-async def get_achievements(user_id: str):
-    state = achievements_module.get_achievements_state(user_id)
-    return {"achievements": state}
-
-@app.post("/api/world/{user_id}/achievements/check")
-async def check_achievements(user_id: str):
-    newly_unlocked = achievements_module.check_achievements(user_id)
-    return {"newly_unlocked": newly_unlocked}
-
-@app.get("/api/world/{user_id}/reports/weekly")
-async def get_weekly_report(user_id: str):
-    report = reports_module.generate_weekly_report(user_id)
-    return report
-
-@app.get("/api/world/{user_id}/reports/monthly")
-async def get_monthly_report(user_id: str):
-    report = reports_module.generate_monthly_report(user_id)
-    return report
+if _env_flag("XIAOMAN_ENABLE_DREAMING_SCHEDULER", default=False):
+    dreaming_thread = threading.Thread(target=dreaming_scheduler, daemon=True)
+    dreaming_thread.start()
+    logger.info("Dreaming scheduler enabled")
+else:
+    logger.info("Dreaming scheduler disabled")
 
 
-# === V0.03 家长模式路由 ===
+# === V0.03 parental routes ===
 @app.get("/api/world/{user_id}/parental")
 async def get_parental_config(user_id: str):
     config = parental_module.get_config(user_id)

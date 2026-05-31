@@ -1,4 +1,4 @@
-"""每日形象 MVP — 按日期/画风轮换静态资源，预留生图 hook"""
+"""Daily avatar metadata from configured static assets plus optional image-generation hook."""
 
 from __future__ import annotations
 
@@ -7,33 +7,49 @@ from datetime import date
 
 from xiaoman.image_generation import fetch_generated_image_url, image_generation_configured
 
-# 设定形象走 /styles 与 onboarding 画风一致；/avatars 仅作聊天气泡情绪图标
+DEFAULT_ASSET_ROOT = "/assets/xiaoman/avatar"
+STYLE_IDS = {"fresh", "korean", "watercolor"}
+
+
+def _daily_avatar_config() -> dict:
+    try:
+        from xiaoman.dialogue.config import load_dialogue_config
+
+        return dict(load_dialogue_config().get("dailyAvatar") or {})
+    except Exception:
+        return {}
+
+
+def _asset_root() -> str:
+    root = str(_daily_avatar_config().get("assetRoot") or DEFAULT_ASSET_ROOT).strip()
+    return root.rstrip("/") or DEFAULT_ASSET_ROOT
+
+
 def _style_url(style: str) -> str:
-    if style in ("fresh", "korean", "watercolor"):
-        return f"/styles/{style}.svg"
-    return "/styles/fresh.svg"
+    style_id = style if style in STYLE_IDS else "fresh"
+    return f"{_asset_root()}/styles/{style_id}.png"
 
 
 DAILY_VARIANTS: list[dict[str, str]] = [
-    {"id": "school", "label": "校服日", "url": "/styles/fresh.svg"},
-    {"id": "sport", "label": "运动服日", "url": "/styles/fresh.svg"},
-    {"id": "hoodie", "label": "卫衣日", "url": "/styles/korean.svg"},
-    {"id": "cozy", "label": "居家日", "url": "/styles/watercolor.svg"},
-    {"id": "study", "label": "自习日", "url": "/styles/fresh.svg"},
+    {"id": "school", "label": "\u6821\u670d\u65e5", "url": _style_url("fresh")},
+    {"id": "sport", "label": "\u8fd0\u52a8\u670d\u65e5", "url": _style_url("fresh")},
+    {"id": "hoodie", "label": "\u536b\u8863\u65e5", "url": _style_url("korean")},
+    {"id": "cozy", "label": "\u5c45\u5bb6\u65e5", "url": _style_url("watercolor")},
+    {"id": "study", "label": "\u81ea\u4e60\u65e5", "url": _style_url("fresh")},
 ]
 
 STYLE_VARIANTS: dict[str, list[dict[str, str]]] = {
     "fresh": [
-        {"id": "f1", "label": "清新动画", "url": _style_url("fresh")},
-        {"id": "f2", "label": "柔和光线", "url": _style_url("fresh")},
+        {"id": "fresh-main", "label": "\u6e05\u65b0\u52a8\u753b", "url": _style_url("fresh")},
+        {"id": "fresh-light", "label": "\u67d4\u548c\u5149\u7ebf", "url": _style_url("fresh")},
     ],
     "korean": [
-        {"id": "k1", "label": "韩系清新", "url": _style_url("korean")},
-        {"id": "k2", "label": "韩系街头", "url": _style_url("korean")},
+        {"id": "korean-main", "label": "\u97e9\u7cfb\u6e05\u65b0", "url": _style_url("korean")},
+        {"id": "korean-line", "label": "\u97e9\u7cfb\u7ebf\u6761", "url": _style_url("korean")},
     ],
     "watercolor": [
-        {"id": "w1", "label": "水彩暖色", "url": _style_url("watercolor")},
-        {"id": "w2", "label": "水彩午后", "url": _style_url("watercolor")},
+        {"id": "watercolor-main", "label": "\u6c34\u5f69\u6696\u8272", "url": _style_url("watercolor")},
+        {"id": "watercolor-soft", "label": "\u6c34\u5f69\u5348\u540e", "url": _style_url("watercolor")},
     ],
 }
 
@@ -45,7 +61,7 @@ def resolve_daily_avatar(
     image_api_url: str | None = None,
     user_id: str = "",
 ) -> dict[str, str]:
-    """返回当日形象元数据。image_api_url 预留外部生图服务。"""
+    """Return daily avatar metadata. URLs point at the configured unified avatar asset folder."""
     day = day or date.today().isoformat()
     pool = STYLE_VARIANTS.get(style) or DAILY_VARIANTS
     digest = hashlib.sha256(f"{day}:{style}".encode()).hexdigest()
@@ -53,6 +69,7 @@ def resolve_daily_avatar(
     variant = dict(pool[idx])
     variant["date"] = day
     variant["style"] = style
+    variant["assetRoot"] = _asset_root()
     variant["imageGenConfigured"] = "true" if image_generation_configured() else "false"
 
     generated = image_api_url

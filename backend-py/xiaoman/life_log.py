@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+from xiaoman.paths import DATA_DIR
 
 
 def _xiaoman_dir(user_id: str) -> str:

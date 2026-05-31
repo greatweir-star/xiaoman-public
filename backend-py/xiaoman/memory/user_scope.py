@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+from xiaoman.paths import DATA_DIR
 
 
 def user_memory_dir(user_id: str) -> str:

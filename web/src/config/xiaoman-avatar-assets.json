@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "assetRoot": "/assets/xiaoman/avatar",
+  "defaultStyle": "fresh",
+  "fallbackPortrait": "/assets/xiaoman/avatar/base-small.jpg",
+  "legacyAliases": {
+    "/assets/xiaoman/avatar.jpg": "/assets/xiaoman/avatar/base.jpg",
+    "/assets/xiaoman/avatar_small.jpg": "/assets/xiaoman/avatar/base-small.jpg",
+    "/assets/xiaoman/onboarding.png": "/assets/xiaoman/avatar/onboarding.png",
+    "/assets/xiaoman/styles/fresh.png": "/assets/xiaoman/avatar/styles/fresh.png",
+    "/assets/xiaoman/styles/korean.png": "/assets/xiaoman/avatar/styles/korean.png",
+    "/assets/xiaoman/styles/watercolor.png": "/assets/xiaoman/avatar/styles/watercolor.png",
+    "/styles/fresh.svg": "/assets/xiaoman/avatar/placeholders/fresh.svg",
+    "/styles/korean.svg": "/assets/xiaoman/avatar/placeholders/korean.svg",
+    "/styles/watercolor.svg": "/assets/xiaoman/avatar/placeholders/watercolor.svg"
+  },
+  "onboarding": {
+    "splash": "/assets/xiaoman/avatar/onboarding.png"
+  },
+  "styles": [
+    {
+      "id": "fresh",
+      "label": "清新动画",
+      "desc": "日系动画，清新软萌和光线",
+      "preview": "/assets/xiaoman/avatar/styles/fresh.png",
+      "portrait": "/assets/xiaoman/avatar/styles/fresh.png",
+      "onboarding": "/assets/xiaoman/avatar/styles/fresh.png"
+    },
+    {
+      "id": "korean",
+      "label": "韩系插画",
+      "desc": "时尚插画，干净线条",
+      "preview": "/assets/xiaoman/avatar/styles/korean.png",
+      "portrait": "/assets/xiaoman/avatar/styles/korean.png",
+      "onboarding": "/assets/xiaoman/avatar/styles/korean.png"
+    },
+    {
+      "id": "watercolor",
+      "label": "温柔水彩",
+      "desc": "手绘质感，pastel色调",
+      "preview": "/assets/xiaoman/avatar/styles/watercolor.png",
+      "portrait": "/assets/xiaoman/avatar/styles/watercolor.png",
+      "onboarding": "/assets/xiaoman/avatar/styles/watercolor.png"
+    }
+  ],
+  "emotions": {
+    "傲娇": "/assets/xiaoman/avatar/emotions/傲娇.svg",
+    "困倦": "/assets/xiaoman/avatar/emotions/困倦.svg",
+    "困惑": "/assets/xiaoman/avatar/emotions/困惑.svg",
+    "委屈": "/assets/xiaoman/avatar/emotions/委屈.svg",
+    "害羞": "/assets/xiaoman/avatar/emotions/害羞.svg",
+    "开心": "/assets/xiaoman/avatar/emotions/开心.svg",
+    "惊讶": "/assets/xiaoman/avatar/emotions/惊讶.svg",
+    "担忧": "/assets/xiaoman/avatar/emotions/担忧.svg",
+    "温柔": "/assets/xiaoman/avatar/emotions/温柔.svg",
+    "生气": "/assets/xiaoman/avatar/emotions/生气.svg",
+    "认真": "/assets/xiaoman/avatar/emotions/认真.svg",
+    "调皮": "/assets/xiaoman/avatar/emotions/调皮.svg"
+  }
+}
