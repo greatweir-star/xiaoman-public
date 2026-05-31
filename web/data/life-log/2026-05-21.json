@@ -1,0 +1,17 @@
+{
+  "date": "2026-05-21",
+  "breakfast": "牛奶+面包，路上吃的",
+  "morningEvents": [
+    "语文课上偷偷看小说",
+    "课间和李晓雨吐槽作业太多"
+  ],
+  "lunch": "食堂红烧肉+番茄炒蛋，红烧肉有点肥",
+  "afternoonEvents": [
+    "放学被老师留堂补作业",
+    "音乐课学了新歌"
+  ],
+  "dinner": "爸爸煮的面条，打了个蛋",
+  "eveningEvents": [],
+  "currentMood": "挺满足的",
+  "currentActivity": "上课"
+}
