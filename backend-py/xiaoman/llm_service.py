@@ -14,14 +14,15 @@ class LLMClient:
     def __init__(
         self,
         api_key: str | None = None,
-        base_url: str = "https://api.pipellm.ai/openai/v1",
-        model: str = "gpt-4o-mini",
+        base_url: str | None = None,
+        model: str | None = None,
         temperature: float = 0.8,
         max_tokens: int = 512,
     ):
         self.api_key = api_key or os.environ.get("LLM_API_KEY", "")
-        self.base_url = base_url
-        self.model = model
+        self.base_url = base_url or os.environ.get("LLM_BASE_URL", "https://api.pipellm.ai/openai/v1")
+        self.model = model or os.environ.get("LLM_MODEL", "gpt-4o-mini")
+        self.provider = os.environ.get("LLM_PROVIDER", "openai-compatible")
         self.temperature = temperature
         self.max_tokens = max_tokens
         
@@ -61,6 +62,7 @@ class LLMClient:
             "temperature": self.temperature,
             "max_completion_tokens": self.max_tokens,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if tools:
             kwargs["tools"] = tools

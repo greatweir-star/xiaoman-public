@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 class MemoryEngine:
     """记忆引擎 — 统一入口"""
 
-    def __init__(self, llm_client: LLMClient):
+    def __init__(self, llm_client: LLMClient, *, memory_repository=None):
         self.llm_client = llm_client
-        self.store = MemoryStore()
+        self.store = MemoryStore(fact_repository=memory_repository)
         self.search = MemorySearch(llm_client)
         self.dreaming = DreamingEngine(llm_client)
         self.promotion = PromotionEngine(llm_client)
@@ -209,7 +209,7 @@ class MemoryEngine:
 
     def _get_lineage(self, user_id: str) -> LineageTracker:
         if user_id not in self.lineage:
-            self.lineage[user_id] = LineageTracker(user_id)
+            self.lineage[user_id] = LineageTracker(user_id, self.store.data_dir)
         return self.lineage[user_id]
 
     def add_lineage_node(

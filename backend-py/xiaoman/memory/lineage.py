@@ -75,14 +75,15 @@ class MemoryNode:
 class LineageTracker:
     """血缘追踪器 — 管理记忆的血缘图（按 user_id 持久化）"""
 
-    def __init__(self, owner_id: str):
+    def __init__(self, owner_id: str, data_dir: str = DATA_DIR):
         self.owner_id = owner_id
+        self.data_dir = data_dir
         self.nodes: dict[str, MemoryNode] = {}
         self._load()
 
     def _lineage_path(self) -> str:
         safe = self.owner_id.replace("/", "_")
-        return os.path.join(DATA_DIR, "users", safe, "memory", "lineage.json")
+        return os.path.join(self.data_dir, "users", safe, "memory", "lineage.json")
 
     def _load(self) -> None:
         """加载血缘图"""
@@ -100,7 +101,7 @@ class LineageTracker:
         path = self._lineage_path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {
-            "session_id": self.session_id,
+            "owner_id": self.owner_id,
             "updated_at": datetime.now().isoformat(),
             "nodes": [node.to_dict() for node in self.nodes.values()],
         }

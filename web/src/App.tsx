@@ -1,4 +1,4 @@
-import { apiJson, apiPostJson, getAccessToken, getGatewayUrl } from "./lib/backend";
+import { apiJson, apiPostJson, createNewGuestId, ensureGuestId, getAccessToken, getAuthEmail, getGatewayUrl, getGuestId, refreshAuthTokens, type AuthTokenPair } from "./lib/backend";
 import { useState, useEffect, useRef, useCallback } from "react";
 import OnboardingFlow, { type OnboardingConfig } from "./components/OnboardingFlow";
 import ChatPage, { type ChatMessage } from "./pages/ChatPage";
@@ -10,6 +10,7 @@ import GrowthPage from "./pages/GrowthPage";
 import ReportPage from "./pages/ReportPage";
 import WorldDetailPage from "./pages/WorldDetailPage";
 import AvatarLightbox from "./components/AvatarLightbox";
+import SaveRelationSheet from "./components/SaveRelationSheet";
 import { useDailyAvatar } from "./hooks/useDailyAvatar";
 import { getTodayAvatarKey } from "./components/DailyAvatar";
 import {
@@ -47,14 +48,16 @@ export default function App() {
   const [chatToast, setChatToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [userId] = useState(() => {
+  const [userId, setUserId] = useState(() => {
     let id = localStorage.getItem("xiaoman_user_id");
     if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem("xiaoman_user_id", id);
+      id = ensureGuestId();
+    } else if (!getAccessToken()) {
+      id = ensureGuestId();
     }
     return id;
   });
+  const [authEmail, setAuthEmail] = useState(() => getAuthEmail());
 
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -77,6 +80,7 @@ export default function App() {
   const dailyAvatar = useDailyAvatar(userId, config.style);
   const portraitUrl = resolveCompanionPortraitUrl(config.style, dailyAvatar?.url);
   const [avatarLightbox, setAvatarLightbox] = useState(false);
+  const [relationSheetOpen, setRelationSheetOpen] = useState(false);
 
   const fetchSkillTree = useCallback(async () => {
     const data = await apiJson<any | null>(`/api/world/${userId}/skill-tree`, null);
@@ -210,6 +214,13 @@ export default function App() {
           if (data.type === "auth_error") {
             showToast(data.payload?.detail || "登录状态已失效");
             setIsTyping(false);
+            void refreshAuthTokens().then((tokens) => {
+              if (tokens) {
+                setUserId(tokens.user.id);
+                setAuthEmail(tokens.user.email);
+                socket.close();
+              }
+            });
             return;
           }
 
@@ -373,6 +384,19 @@ export default function App() {
   const goBack = () =>
     setView(view === "diary" || view === "memory" || view === "growth" || view === "report" ? "life" : "settings");
 
+  const handleAuthenticated = (tokens: AuthTokenPair) => {
+    setUserId(tokens.user.id);
+    setAuthEmail(tokens.user.email);
+    ws.current?.close();
+  };
+
+  const handleLoggedOut = () => {
+    setAuthEmail("");
+    setUserId(getGuestId() || createNewGuestId());
+    ws.current?.close();
+  };
+  const closeRelationSheet = useCallback(() => setRelationSheetOpen(false), []);
+
   const sendMessage = useCallback((text: string) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       setMessages((prev) => [...prev, { sender: "user", text, timestamp: Date.now() }]);
@@ -410,6 +434,8 @@ export default function App() {
             todayStatus={todayStatus}
             onAvatarClick={() => setAvatarLightbox(true)}
             userId={userId}
+            authEmail={authEmail}
+            onSaveRelationship={() => setRelationSheetOpen(true)}
           />
         )}
         {view === "life" && (
@@ -429,6 +455,9 @@ export default function App() {
             style={config.style}
             onStyleChange={handleStyleChange}
             onNavigate={navigate}
+            authEmail={authEmail}
+            onAuthenticated={handleAuthenticated}
+            onLoggedOut={handleLoggedOut}
           />
         )}
         {view === "diary" && <DiaryPage userId={userId} onBack={goBack} />}
@@ -447,12 +476,21 @@ export default function App() {
           onClose={() => setAvatarLightbox(false)}
         />
       )}
+      {relationSheetOpen && (
+        <SaveRelationSheet
+          email={authEmail}
+          onAuthenticated={handleAuthenticated}
+          onLoggedOut={handleLoggedOut}
+          onClose={closeRelationSheet}
+        />
+      )}
 
       {showTabBar && (
-        <div className="tab-bar">
+        <nav className="tab-bar" aria-label="主导航">
           <button
+            type="button"
             className={`tab-item ${view === "chat" ? "active" : ""}`}
-            onClick={() => setView("chat")}
+            onClick={() => navigate("chat")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -460,17 +498,19 @@ export default function App() {
             <span className="tab-label">聊天</span>
           </button>
           <button
+            type="button"
             className={`tab-item ${view === "life" ? "active" : ""}`}
-            onClick={() => setView("life")}
+            onClick={() => navigate("life")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
             </svg>
-            <span className="tab-label">life</span>
+            <span className="tab-label">故事</span>
           </button>
           <button
+            type="button"
             className={`tab-item ${view === "settings" ? "active" : ""}`}
-            onClick={() => setView("settings")}
+            onClick={() => navigate("settings")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -478,7 +518,7 @@ export default function App() {
             </svg>
             <span className="tab-label">设置</span>
           </button>
-        </div>
+        </nav>
       )}
     </div>
   );

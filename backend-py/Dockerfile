@@ -1,4 +1,4 @@
-﻿FROM python:3.14-slim
+﻿FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -13,4 +13,4 @@ COPY . .
 
 EXPOSE 18789
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "18789"]
+CMD ["sh", "-c", "python -m app.migrations.run && exec uvicorn main:app --host 0.0.0.0 --port 18789"]

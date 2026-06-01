@@ -12,7 +12,7 @@ from app.auth.repository import (
     DEFAULT_TENANT_ID,
     AuthRepository,
     AuthUser,
-    InMemoryAuthRepository,
+    create_auth_repository,
 )
 from app.auth.tokens import TokenError, create_token, decode_token, hash_token
 from app.config import Settings, get_settings
@@ -78,8 +78,11 @@ class AuthService:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
         return self._issue_pair(user)
 
-    def logout(self, refresh_token: str) -> None:
-        self.repository.revoke_session(hash_token(refresh_token))
+    def logout(self, refresh_token: str) -> AuthUser | None:
+        refresh_hash = hash_token(refresh_token)
+        session = self.repository.get_session_by_refresh_hash(refresh_hash)
+        self.repository.revoke_session(refresh_hash)
+        return self.repository.get_user_by_id(session.user_id) if session else None
 
     def get_user_from_access_token(self, access_token: str) -> AuthUser:
         payload = self.decode_access(access_token)
@@ -134,10 +137,9 @@ class AuthService:
         )
 
 
-_repo = InMemoryAuthRepository()
+_repo = create_auth_repository()
 _service = AuthService(_repo)
 
 
 def get_auth_service() -> AuthService:
     return _service
-

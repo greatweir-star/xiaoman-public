@@ -1,6 +1,5 @@
 import { apiJson } from "../lib/backend";
 import { useState, useEffect, useRef } from "react";
-import SkillTree from "../components/SkillTree";
 import XiaomanAvatar from "../components/XiaomanAvatar";
 import TypingIndicator from "../components/TypingIndicator";
 
@@ -18,10 +17,13 @@ export interface ChatMessage {
 }
 
 const FUN_PROMPTS = [
-  { label: "猜心情", text: "我们来玩猜心情吧~" },
-  { label: "猜谜", text: "给我出个谜语猜猜看" },
-  { label: "编故事", text: "我们一起编个故事吧，你先开个头" },
+  { label: "就想吐槽一下", text: "我现在就想吐槽一下，你先听我说说。" },
+  { label: "帮我理一理", text: "我有点乱，可以陪我一起理一理吗？" },
+  { label: "先陪我待会儿", text: "先不用解决问题，陪我待会儿就好。" },
 ] as const;
+
+const SAVE_NUDGE_DISMISSED_AT_KEY = "xiaoman_save_nudge_dismissed_at";
+const SAVE_NUDGE_COOLDOWN = 24 * 60 * 60 * 1000;
 
 function containsNegativeKeyword(text: string): boolean {
   const keywords = ["崩溃", "绝望", "痛苦", "想死", "累", "烦", "焦虑", "无聊", "难过", "委屈", "丧"];
@@ -70,6 +72,8 @@ interface ChatPageProps {
   todayStatus?: string;
   onAvatarClick?: () => void;
   userId?: string;
+  authEmail?: string;
+  onSaveRelationship?: () => void;
 }
 
 export default function ChatPage({
@@ -85,10 +89,11 @@ export default function ChatPage({
   skillTree,
   dailyAvatarUrl,
   dailyAvatarLabel,
-  companionCode,
   todayStatus,
   onAvatarClick,
   userId,
+  authEmail = "",
+  onSaveRelationship,
 }: ChatPageProps) {
   const [input, setInput] = useState("");
   const [connectionError, setConnectionError] = useState("");
@@ -98,9 +103,14 @@ export default function ChatPage({
 
   const [usage, setUsage] = useState<UsageStats | null>(null);
   const [sessionWarnDismissed, setSessionWarnDismissed] = useState(false);
+  const [saveNudgeDismissed, setSaveNudgeDismissed] = useState(() => {
+    const dismissedAt = Number(localStorage.getItem(SAVE_NUDGE_DISMISSED_AT_KEY) || 0);
+    return Date.now() - dismissedAt < SAVE_NUDGE_COOLDOWN;
+  });
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    messagesEndRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
   }, [messages, isTyping, toast]);
 
   useEffect(() => {
@@ -128,7 +138,7 @@ export default function ChatPage({
   const send = () => {
     if (!input.trim()) return;
     if (!connected) {
-      setConnectionError("连接已断开，正在重连...");
+      setConnectionError("连接已断开，正在重连…");
       return;
     }
     onSendMessage(input);
@@ -136,17 +146,18 @@ export default function ChatPage({
     setConnectionError("");
   };
 
-  const prevThreshold = skillTree
-    ? [0, 20, 50, 100, 200][Math.max(0, skillTree.level - 1)] ?? 0
-    : 0;
-  const progressCurrent = skillTree ? skillTree.xp - prevThreshold : 0;
-  const progressTotal = skillTree ? skillTree.next_threshold - prevThreshold : 20;
-
   const isNightLocked = usage?.night_locked ?? false;
   const isDailyExhausted = usage !== null && usage.daily_remaining <= 0;
   const showSessionWarn =
     !sessionWarnDismissed && usage !== null && usage.session_remaining <= 5 && usage.session_remaining > 0;
   const inputDisabled = !connected || isNightLocked || isDailyExhausted;
+  const showSaveNudge =
+    !authEmail && !saveNudgeDismissed && messages.filter((message) => message.sender !== "system").length >= 3;
+
+  const dismissSaveNudge = () => {
+    localStorage.setItem(SAVE_NUDGE_DISMISSED_AT_KEY, String(Date.now()));
+    setSaveNudgeDismissed(true);
+  };
 
   return (
     <div className="chat-page">
@@ -164,31 +175,24 @@ export default function ChatPage({
             />
             <div className="chat-top-info">
               <span className="chat-top-name">{config.name}</span>
-              {companionCode && (
-                <span className="chat-companion-code">{companionCode}</span>
-              )}
               <span className="chat-top-status">
-                {isSleeping ? "睡了" : connected ? "在线" : "连接中..."}
-                {todayStatus && !isSleeping ? ` · ${todayStatus}` : ""}
+                {isSleeping ? "睡了" : connected ? "在线" : "连接中…"}
+                {!isSleeping && (todayStatus || xiaomanStatus.activity)
+                  ? ` · ${todayStatus || xiaomanStatus.activity}`
+                  : ""}
               </span>
             </div>
           </div>
-          <div className="chat-top-right">
-            <div className="status-badge">{xiaomanStatus.activity || "空闲"}</div>
-            <div className="mood-badge">{currentEmotion}</div>
-          </div>
+          <button
+            type="button"
+            className="relationship-pill"
+            onClick={onSaveRelationship}
+            aria-label="查看关系保存状态"
+          >
+            <span aria-hidden="true">♡</span>
+            <span>关系 Lv.{skillTree?.level ?? 1}</span>
+          </button>
         </div>
-        {skillTree && (
-          <div className="chat-header-progress">
-            <span className="chat-skill-tree-label">懂我程度</span>
-            <SkillTree
-              level={skillTree.level}
-              name={skillTree.name}
-              current={progressCurrent}
-              total={Math.max(progressTotal, 1)}
-            />
-          </div>
-        )}
       </header>
 
       {toast && <div className="chat-toast">{toast}</div>}
@@ -201,6 +205,13 @@ export default function ChatPage({
       )}
 
       <div className="messages">
+        {messages.length === 0 && (
+          <div className="chat-empty-state">
+            <p className="soft-eyebrow">YOUR NEW DESKMATE</p>
+            <h2>今天过得怎么样？</h2>
+            <p>不用想好再开口。开心的、烦的、没头没尾的，都可以先告诉小满。</p>
+          </div>
+        )}
         {messages.map((msg, i) => {
           if (msg.sender === "system" && msg.kind === "memory_recall") {
             const texts = msg.memories?.length
@@ -227,7 +238,8 @@ export default function ChatPage({
               )}
               <div className="message-content">
                 {msg.sender === "xiaoman" && msg.kind === "memory_recall" && (
-                  <div
+                  <button
+                    type="button"
                     className="memory-recall-hint"
                     onClick={() => {
                       setExpandedRecalls((prev) => {
@@ -244,7 +256,7 @@ export default function ChatPage({
                         {msg.memories?.length ? msg.memories.join(" · ") : msg.text}
                       </span>
                     )}
-                  </div>
+                  </button>
                 )}
                 <div
                   className={`bubble${msg.crisis ? " crisis-bubble" : ""}`}
@@ -283,6 +295,19 @@ export default function ChatPage({
             <div className="bubble"><TypingIndicator /></div>
           </div>
         )}
+        {showSaveNudge && (
+          <article className="save-relationship-nudge">
+            <span className="save-nudge-icon" aria-hidden="true">存</span>
+            <div>
+              <h3>保存你和小满的进度</h3>
+              <p>换个设备回来，她也会记得刚才的事。</p>
+              <div className="save-nudge-actions">
+                <button type="button" onClick={onSaveRelationship}>保存关系</button>
+                <button type="button" onClick={dismissSaveNudge}>暂时不用</button>
+              </div>
+            </div>
+          </article>
+        )}
         <div ref={messagesEndRef} />
       </div>
 
@@ -301,21 +326,35 @@ export default function ChatPage({
       </div>
 
       <div className="input-area">
-        <input
+        <label className="sr-only" htmlFor="chat-message-input">给小满发消息</label>
+        <textarea
+          id="chat-message-input"
+          name="message"
+          rows={1}
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && send()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
+          }}
           placeholder={
             isNightLocked
               ? "夜间模式已开启，明天见～"
               : isDailyExhausted
               ? "今日使用时间已到，去休息一下吧～"
-              : `跟${config.name}说点什么...`
+              : `跟${config.name}说点什么…`
           }
           disabled={inputDisabled}
           className={inputBreathing ? "input-breathing" : ""}
         />
-        <button type="button" onClick={send} disabled={inputDisabled}>发送</button>
+        <button type="button" onClick={send} disabled={inputDisabled} aria-label="发送消息">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m21 3-7.6 18-3.2-7.2L3 10.6 21 3Z" />
+            <path d="m10.2 13.8 4.6-4.6" />
+          </svg>
+        </button>
       </div>
 
       {/* 覆盖层 */}

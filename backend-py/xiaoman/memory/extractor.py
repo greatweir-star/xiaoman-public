@@ -88,57 +88,61 @@ class MemoryExtractor:
 
     def _do_extract(self, user_id: str, session_id: str, messages: list[dict[str, Any]]) -> None:
         try:
-            self.store.migrate_session_to_user(session_id, user_id)
-            cursor = self.store.load_cursor(user_id, session_id)
-            new_messages = messages[cursor:]
-            if not new_messages:
-                return
-
-            if self._main_agent_wrote_memory(new_messages):
-                logger.info(
-                    "Skip extract: main agent used memory_update user=%s session=%s",
-                    user_id,
-                    session_id,
-                )
-                self.store.save_cursor(user_id, session_id, len(messages))
-                return
-
-            logger.info("Memory extraction user=%s session=%s new_msgs=%d", user_id, session_id, len(new_messages))
-            conversation = "\n".join(
-                f"{'用户' if m['role'] == 'user' else '小满'}: {m.get('content', '')}"
-                for m in new_messages
-            )
-            prompt = EXTRACTION_PROMPT.format(conversation=conversation)
-
-            all_facts: list[dict[str, Any]] = []
-            for _ in range(3):
-                response = self.llm_client.complete([
-                    {"role": "system", "content": "你是记忆提取助手，只输出合法 JSON 数组。"},
-                    {"role": "user", "content": prompt},
-                ])
-                content = response["choices"][0]["message"].get("content", "")
-                facts = self._parse_facts_json(content)
-                if facts:
-                    all_facts.extend(facts)
-                    break
-                if "[]" in content or "无新信息" in content:
-                    break
-
-            if all_facts:
-                self._save_facts(user_id, all_facts)
-                if self._world_getter:
-                    world = self._world_getter(user_id)
-                    if world:
-                        apply_facts_to_world(world, all_facts)
-                if self.on_complete:
-                    self.on_complete(user_id, all_facts)
-
-            self.store.save_cursor(user_id, session_id, len(messages))
-
+            self.extract_now(user_id=user_id, session_id=session_id, messages=messages)
         except Exception:
             logger.exception("Memory extraction failed user=%s", user_id)
         finally:
             self._drain_pending()
+
+    def extract_now(self, *, user_id: str, session_id: str, messages: list[dict[str, Any]]) -> dict[str, int]:
+        """Extract facts synchronously so a durable worker can retry failures."""
+        self.store.migrate_session_to_user(session_id, user_id)
+        cursor = self.store.load_cursor(user_id, session_id)
+        new_messages = messages[cursor:]
+        if not new_messages:
+            return {"processed_messages": 0, "facts": 0}
+
+        if self._main_agent_wrote_memory(new_messages):
+            logger.info(
+                "Skip extract: main agent used memory_update user=%s session=%s",
+                user_id,
+                session_id,
+            )
+            self.store.save_cursor(user_id, session_id, len(messages))
+            return {"processed_messages": len(new_messages), "facts": 0}
+
+        logger.info("Memory extraction user=%s session=%s new_msgs=%d", user_id, session_id, len(new_messages))
+        conversation = "\n".join(
+            f"{'用户' if m['role'] == 'user' else '小满'}: {m.get('content', '')}"
+            for m in new_messages
+        )
+        prompt = EXTRACTION_PROMPT.format(conversation=conversation)
+
+        all_facts: list[dict[str, Any]] = []
+        for _ in range(3):
+            response = self.llm_client.complete([
+                {"role": "system", "content": "你是记忆提取助手，只输出合法 JSON 数组。"},
+                {"role": "user", "content": prompt},
+            ])
+            content = response["choices"][0]["message"].get("content", "")
+            facts = self._parse_facts_json(content)
+            if facts:
+                all_facts.extend(facts)
+                break
+            if "[]" in content or "无新信息" in content:
+                break
+
+        if all_facts:
+            self._save_facts(user_id, all_facts)
+            if self._world_getter:
+                world = self._world_getter(user_id)
+                if world:
+                    apply_facts_to_world(world, all_facts)
+            if self.on_complete:
+                self.on_complete(user_id, all_facts)
+
+        self.store.save_cursor(user_id, session_id, len(messages))
+        return {"processed_messages": len(new_messages), "facts": len(all_facts)}
 
     def _drain_pending(self) -> None:
         with self._lock:
@@ -192,7 +196,7 @@ class MemoryExtractor:
 
     def _save_facts(self, user_id: str, facts: list[dict[str, Any]]) -> None:
         if user_id not in self.lineage_trackers:
-            self.lineage_trackers[user_id] = LineageTracker(user_id)
+            self.lineage_trackers[user_id] = LineageTracker(user_id, self.store.data_dir)
         tracker = self.lineage_trackers[user_id]
 
         extract_node_id = tracker.add_node(
