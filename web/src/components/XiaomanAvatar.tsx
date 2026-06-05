@@ -15,6 +15,24 @@ function getEmotionOverlay(emotion: string | undefined): "happy" | "sad" | "surp
   return null;
 }
 
+function DailyAccessory({ variant }: { variant: string }) {
+  const isAlternate = ["fresh-light", "korean-line", "watercolor-soft"].includes(variant);
+  return (
+    <span className={`daily-avatar-accessory${isAlternate ? " alternate" : ""}`} aria-hidden="true">
+      <svg viewBox="0 0 32 32">
+        {isAlternate ? (
+          <path d="M16 3 L19 12 L28 16 L19 20 L16 29 L13 20 L4 16 L13 12 Z" />
+        ) : (
+          <>
+            <circle cx="16" cy="16" r="5" />
+            <path d="M16 2 V8 M16 24 V30 M2 16 H8 M24 16 H30 M6 6 L10 10 M22 22 L26 26 M26 6 L22 10 M10 22 L6 26" />
+          </>
+        )}
+      </svg>
+    </span>
+  );
+}
+
 interface Props {
   emotion?: string;
   size?: "xs" | "sm" | "md" | "lg";
@@ -28,6 +46,7 @@ interface Props {
   mode?: "portrait" | "emotion";
   enlargeable?: boolean;
   title?: string;
+  dailyVariant?: string;
 }
 
 export default function XiaomanAvatar({
@@ -40,6 +59,7 @@ export default function XiaomanAvatar({
   mode = "portrait",
   enlargeable = false,
   title,
+  dailyVariant,
 }: Props) {
   const sizeMap = {
     xs: { width: 32, height: 32 },
@@ -157,6 +177,7 @@ export default function XiaomanAvatar({
           )}
         </svg>
       )}
+      {mode === "portrait" && dailyVariant && <DailyAccessory variant={dailyVariant} />}
     </div>
   );
 }

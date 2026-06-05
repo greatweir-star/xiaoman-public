@@ -54,6 +54,16 @@ STYLE_VARIANTS: dict[str, list[dict[str, str]]] = {
 }
 
 
+def _variant_index(day: str, style: str, pool_size: int) -> int:
+    """Rotate daily variants predictably so adjacent days visibly differ."""
+    try:
+        day_number = date.fromisoformat(day).toordinal()
+    except ValueError:
+        day_number = int(hashlib.sha256(day.encode()).hexdigest()[:8], 16)
+    style_offset = int(hashlib.sha256(style.encode()).hexdigest()[:8], 16)
+    return (day_number + style_offset) % pool_size
+
+
 def resolve_daily_avatar(
     *,
     style: str = "fresh",
@@ -64,8 +74,7 @@ def resolve_daily_avatar(
     """Return daily avatar metadata. URLs point at the configured unified avatar asset folder."""
     day = day or date.today().isoformat()
     pool = STYLE_VARIANTS.get(style) or DAILY_VARIANTS
-    digest = hashlib.sha256(f"{day}:{style}".encode()).hexdigest()
-    idx = int(digest[:8], 16) % len(pool)
+    idx = _variant_index(day, style, len(pool))
     variant = dict(pool[idx])
     variant["date"] = day
     variant["style"] = style

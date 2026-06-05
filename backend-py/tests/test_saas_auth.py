@@ -1,5 +1,8 @@
+import asyncio
+
 from fastapi import HTTPException
 
+from app.auth.routes import auth_health
 from app.auth.service import AuthService
 from app.auth.repository import InMemoryAuthRepository
 from app.auth.tokens import TokenError, decode_token
@@ -41,10 +44,16 @@ def test_refresh_and_logout():
 
     refreshed = service.refresh(pair.refresh_token)
     assert refreshed.user.id == pair.user.id
-
-    service.logout(pair.refresh_token)
     try:
         service.refresh(pair.refresh_token)
+    except HTTPException as exc:
+        assert exc.status_code == 401
+    else:
+        raise AssertionError("rotated refresh token should be revoked")
+
+    service.logout(refreshed.refresh_token)
+    try:
+        service.refresh(refreshed.refresh_token)
     except HTTPException as exc:
         assert exc.status_code == 401
     else:
@@ -61,3 +70,8 @@ def test_token_signature_is_checked():
         pass
     else:
         raise AssertionError("token signed with a different secret should fail")
+
+
+def test_auth_health_exposes_required_mode():
+    result = asyncio.run(auth_health(Settings(auth_required=True)))
+    assert result == {"status": "ok", "auth_required": True}

@@ -16,16 +16,8 @@ npm-debug.log*
 
 # Data & runtime files (DO NOT commit user data)
 backend-py/data/diary/
-backend-py/data/audit_logs.jsonl
-backend-py/data/exports/
-backend-py/data/guest_archive/
-backend-py/data/guest_claims.json
 backend-py/data/lancedb/
-backend-py/data/lineage/
 backend-py/data/memory/
-backend-py/data/memory_cursor.json
-backend-py/data/repository/
-backend-py/data/safety_events.jsonl
 backend-py/data/sessions/
 backend-py/data/sessions_jsonl/
 backend-py/data/users/

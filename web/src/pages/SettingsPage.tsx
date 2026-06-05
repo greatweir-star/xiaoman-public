@@ -1,7 +1,5 @@
 import { apiFetch, apiJson } from "../lib/backend";
 import { useState, useEffect } from "react";
-import SaveRelationSheet from "../components/SaveRelationSheet";
-import type { AuthTokenPair } from "../lib/backend";
 import {
   COMPANION_STYLE_OPTIONS,
   stylePreviewUrl,
@@ -13,9 +11,9 @@ interface SettingsPageProps {
   style: string;
   onStyleChange: (style: CompanionStyle) => void;
   onNavigate: (view: "xiaoman-world" | "user-world") => void;
-  authEmail: string;
-  onAuthenticated: (tokens: AuthTokenPair) => void;
-  onLoggedOut: () => void;
+  accountEmail?: string;
+  localMode?: boolean;
+  onLogout: () => void;
 }
 
 interface SecretItem {
@@ -58,17 +56,15 @@ export default function SettingsPage({
   style,
   onStyleChange,
   onNavigate,
-  authEmail,
-  onAuthenticated,
-  onLoggedOut,
+  accountEmail,
+  localMode = false,
+  onLogout,
 }: SettingsPageProps) {
   const [secrets, setSecrets] = useState<SecretItem[]>([]);
   const [revealed, setRevealed] = useState(false);
   const [loadingSecrets, setLoadingSecrets] = useState(false);
   const [savingStyle, setSavingStyle] = useState(false);
   const [styleSaved, setStyleSaved] = useState(false);
-  const [accountSheetOpen, setAccountSheetOpen] = useState(false);
-  const [settingsNotice, setSettingsNotice] = useState("");
 
   const [parentalPanel, setParentalPanel] = useState(false);
   const [cfg, setCfg] = useState<ParentalConfig>(defaultConfig);
@@ -311,33 +307,22 @@ export default function SettingsPage({
 
   return (
     <div className="settings-page">
-      <header className="settings-page-header">
-        <div>
-          <p className="soft-eyebrow">SETTINGS</p>
-          <h2 className="settings-title">设置</h2>
-        </div>
-        <span className={`settings-sync-chip ${authEmail ? "is-synced" : ""}`}>
-          {authEmail ? "已同步" : "游客"}
-        </span>
-      </header>
+      <h2 className="settings-title">设置</h2>
 
-      <button
-        type="button"
-        className="settings-account-card"
-        onClick={() => setAccountSheetOpen(true)}
-      >
-        <span className="settings-account-icon" aria-hidden="true">{authEmail ? "✓" : "存"}</span>
-        <span>
-          <small>{authEmail ? "关系已保存" : "保存这段关系"}</small>
-          <strong>{authEmail ? "小满会在其他设备等你回来" : "换个设备回来，她也会记得你"}</strong>
-          <em>{authEmail ? "聊天、记忆和成长记录已同步。" : "注册或登录后即可跨设备恢复。"}</em>
-        </span>
-      </button>
+      <div className="settings-account-section">
+        <div>
+          <h3>{localMode ? "本地体验" : "当前账号"}</h3>
+          <p>{localMode ? "数据仅用于本机开发调试" : accountEmail || "已登录"}</p>
+        </div>
+        <button type="button" className="settings-logout-btn" onClick={onLogout}>
+          {localMode ? "退出体验" : "退出登录"}
+        </button>
+      </div>
 
       <div className="settings-style-section">
-        <h3 className="settings-style-heading">小满的形象</h3>
+        <h3 className="settings-style-heading">小满画风</h3>
         <p className="settings-secrets-hint">
-          更换后聊天与故事页头像会同步更新，每日轮换仍按画风进行。
+          更换后聊天与 Life 页头像会同步更新（每日轮换仍按画风）
         </p>
         <div className="styles settings-styles">
           {COMPANION_STYLE_OPTIONS.map((s) => (
@@ -364,9 +349,8 @@ export default function SettingsPage({
         )}
       </div>
 
-      <h3 className="settings-group-title">你和小满</h3>
       <div className="settings-menu">
-        <button type="button" className="settings-menu-item" onClick={() => onNavigate("xiaoman-world")}>
+        <div className="settings-menu-item" onClick={() => onNavigate("xiaoman-world")}>
           <div className="settings-menu-left">
             <span className="settings-menu-icon" style={{ background: "#e3f2fd", color: "#1976d2" }}>满</span>
             <div>
@@ -375,9 +359,9 @@ export default function SettingsPage({
             </div>
           </div>
           <span className="settings-menu-arrow">›</span>
-        </button>
+        </div>
 
-        <button type="button" className="settings-menu-item" onClick={() => onNavigate("user-world")}>
+        <div className="settings-menu-item" onClick={() => onNavigate("user-world")}>
           <div className="settings-menu-left">
             <span className="settings-menu-icon" style={{ background: "#f3e5f5", color: "#7b1fa2" }}>你</span>
             <div>
@@ -386,27 +370,9 @@ export default function SettingsPage({
             </div>
           </div>
           <span className="settings-menu-arrow">›</span>
-        </button>
-      </div>
+        </div>
 
-      <h3 className="settings-group-title">安全与支持</h3>
-      <div className="settings-menu">
-        <button
-          type="button"
-          className="settings-menu-item"
-          onClick={() => setSettingsNotice("你可以随时查看、导出或删除小满保存的内容。家长模式只能查看摘要，不会看到聊天原文。")}
-        >
-          <div className="settings-menu-left">
-            <span className="settings-menu-icon settings-icon-blue">隐</span>
-            <div>
-              <div className="settings-menu-name">隐私与数据</div>
-              <div className="settings-menu-desc">查看、导出、删除与数据说明</div>
-            </div>
-          </div>
-          <span className="settings-menu-arrow">›</span>
-        </button>
-
-        <button type="button" className="settings-menu-item" onClick={() => setParentalPanel(true)}>
+        <div className="settings-menu-item" onClick={() => setParentalPanel(true)}>
           <div className="settings-menu-left">
             <span className="settings-menu-icon" style={{ background: "#fff3e0", color: "#e65100" }}>家</span>
             <div>
@@ -415,27 +381,8 @@ export default function SettingsPage({
             </div>
           </div>
           <span className="settings-menu-arrow">›</span>
-        </button>
-
-        <button
-          type="button"
-          className="settings-menu-item"
-          onClick={() => setSettingsNotice("封闭测试期间，你可以记录遇到的问题、期待的功能和不顺手的地方。反馈提交入口将在下一批接入。")}
-        >
-          <div className="settings-menu-left">
-            <span className="settings-menu-icon settings-icon-violet">问</span>
-            <div>
-              <div className="settings-menu-name">反馈与问题</div>
-              <div className="settings-menu-desc">告诉我们哪里不顺手</div>
-            </div>
-          </div>
-          <span className="settings-menu-arrow">›</span>
-        </button>
+        </div>
       </div>
-
-      {settingsNotice && (
-        <p className="settings-notice" role="status">{settingsNotice}</p>
-      )}
 
       <div className="settings-secrets-section">
         <div className="settings-secrets-header">
@@ -461,19 +408,6 @@ export default function SettingsPage({
           ))}
         </ul>
       </div>
-
-      <p className="settings-privacy-footnote">
-        小满会保存你愿意告诉她的事情。你随时可以查看、导出或删除这些数据。
-      </p>
-
-      {accountSheetOpen && (
-        <SaveRelationSheet
-          email={authEmail}
-          onAuthenticated={onAuthenticated}
-          onLoggedOut={onLoggedOut}
-          onClose={() => setAccountSheetOpen(false)}
-        />
-      )}
     </div>
   );
 }

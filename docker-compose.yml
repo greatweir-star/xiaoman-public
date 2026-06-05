@@ -1,32 +1,6 @@
+version: "3.8"
+
 services:
-  postgres:
-    image: postgres:16-alpine
-    ports:
-      - "127.0.0.1:5432:5432"
-    environment:
-      - POSTGRES_DB=xiaoman
-      - POSTGRES_USER=xiaoman
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-xiaoman}
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U xiaoman -d xiaoman"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   xiaoman-backend:
     build:
       context: ./backend-py
@@ -38,27 +12,9 @@ services:
       - PYTHONUNBUFFERED=1
       - XIAOMAN_DATA_DIR=/app/data
       - XIAOMAN_ENABLE_DREAMING_SCHEDULER=false
-      - XIAOMAN_ENV=${XIAOMAN_ENV:-local}
-      - XIAOMAN_AUTH_REQUIRED=${XIAOMAN_AUTH_REQUIRED:-false}
-      - XIAOMAN_STORAGE_BACKEND=${XIAOMAN_STORAGE_BACKEND:-file}
-      - XIAOMAN_QUEUE_BACKEND=${XIAOMAN_QUEUE_BACKEND:-inline}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://xiaoman:xiaoman@postgres:5432/xiaoman}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - JWT_SECRET=${JWT_SECRET:-}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-https://api.pipellm.ai/openai/v1}
       - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - LLM_PROVIDER=${LLM_PROVIDER:-openai-compatible}
-      - LLM_PROMPT_COST_PER_1M=${LLM_PROMPT_COST_PER_1M:-0}
-      - LLM_COMPLETION_COST_PER_1M=${LLM_COMPLETION_COST_PER_1M:-0}
-      - XIAOMAN_RATE_LIMIT_MESSAGES=${XIAOMAN_RATE_LIMIT_MESSAGES:-12}
-      - XIAOMAN_RATE_LIMIT_WINDOW_SECONDS=${XIAOMAN_RATE_LIMIT_WINDOW_SECONDS:-60}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   xiaoman-web:
     build: ./web
@@ -66,31 +22,3 @@ services:
       - "3000:80"
     depends_on:
       - xiaoman-backend
-
-  xiaoman-worker:
-    build:
-      context: ./backend-py
-    command: ["sh", "-c", "python -m app.migrations.run && exec python -m app.workers.runner"]
-    volumes:
-      - ./backend-py/data:/app/data
-    environment:
-      - PYTHONUNBUFFERED=1
-      - XIAOMAN_DATA_DIR=/app/data
-      - XIAOMAN_ENV=${XIAOMAN_ENV:-local}
-      - XIAOMAN_STORAGE_BACKEND=${XIAOMAN_STORAGE_BACKEND:-postgres}
-      - XIAOMAN_QUEUE_BACKEND=${XIAOMAN_QUEUE_BACKEND:-postgres}
-      - DATABASE_URL=${DATABASE_URL:-postgresql://xiaoman:xiaoman@postgres:5432/xiaoman}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - LLM_API_KEY=${LLM_API_KEY:-}
-      - LLM_BASE_URL=${LLM_BASE_URL:-https://api.pipellm.ai/openai/v1}
-      - LLM_MODEL=${LLM_MODEL:-gpt-4o-mini}
-      - XIAOMAN_WORKER_POLL_SECONDS=${XIAOMAN_WORKER_POLL_SECONDS:-1}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
-volumes:
-  postgres-data:
-  redis-data:

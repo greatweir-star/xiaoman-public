@@ -293,6 +293,7 @@ def generate_monthly_report(user_id: str, force: bool = False) -> dict[str, Any]
         "month": month,
         "generated_at": datetime.now().isoformat(),
         "emotion_trend": emotion_trend,
+        "top_emotions": top,
         "keyword_cloud": keywords,
         "achievements_unlocked": unlocked_this_month,
         "level_change": level_change,

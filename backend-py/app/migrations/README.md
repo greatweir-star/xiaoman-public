@@ -12,3 +12,8 @@ Rules:
 - Local file storage remains supported until `XIAOMAN_STORAGE_BACKEND=postgres`
   is fully implemented.
 
+Current migrations:
+
+- `0001_auth.sql`: tenants, users, auth sessions, and devices.
+- `0002_core_storage.sql`: companions, profiles, chat sessions, messages, chunks,
+  world layers, memory facts, memory documents, and life events.

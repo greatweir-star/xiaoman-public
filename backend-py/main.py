@@ -24,23 +24,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.routes import router as auth_router
-from app.auth.repository import DEFAULT_TENANT_ID
-from app.config import get_settings
-from app.data_lifecycle.routes import router as data_lifecycle_router
-from app.guest_claims.routes import router as guest_claim_router
 from app.legacy_security import LegacyApiAuthMiddleware, resolve_ws_auth_user_id
-from app.operations.service import get_operational_services
-from app.repositories.factory import get_repositories
-from app.services.dialogue import DialoguePersistenceService
-from app.services.rate_limit import create_rate_limit_service
-from app.services.usage import UsageService
-from app.services.world_persistence import WorldPersistenceService
-from app.security.redaction import configure_redacted_logging
-from app.tasks.routes import router as task_router
-from app.tasks.service import get_task_service
-from app.usage.routes import router as usage_router
-from app.ws.context import ConnectionContext
-from app.ws.errors import AUTH_FAILED, INVALID_MESSAGE, MODEL_ERROR, RATE_LIMITED, ws_error_payload
 from xiaoman.chunk import ChunkKind, ChunkRow, user_text_chunk
 from xiaoman.compaction import compact_chunk_table
 from xiaoman.llm_service import LLMClient
@@ -108,7 +92,6 @@ from xiaoman.tools import (
 from xiaoman.world import WorldSystem
 from xiaoman.life_timeline import (
     append_event as timeline_append,
-    configure_timeline_repository,
     list_events as timeline_list,
     record_period_if_changed,
 )
@@ -134,41 +117,22 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("xiaoman")
-configure_redacted_logging()
 
 app = FastAPI(title="小满后端", version="0.0.1")
-settings = get_settings()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(settings.cors_allowed_origins),
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_middleware(LegacyApiAuthMiddleware)
 app.include_router(auth_router)
-app.include_router(data_lifecycle_router)
-app.include_router(guest_claim_router)
-app.include_router(task_router)
-app.include_router(usage_router)
-repositories = get_repositories()
-dialogue_persistence = DialoguePersistenceService(repositories) if settings.uses_postgres else None
-world_persistence = (
-    WorldPersistenceService(repositories.world, tenant_id=DEFAULT_TENANT_ID)
-    if settings.uses_postgres
-    else None
-)
-if settings.uses_postgres:
-    configure_timeline_repository(repositories.timeline, tenant_id=DEFAULT_TENANT_ID)
-usage_service = UsageService(repositories.usage, settings)
-rate_limit_service = create_rate_limit_service(settings)
-task_service = get_task_service()
-operational_services = get_operational_services()
 
 # --- 全局实例 ---
 llm_client = LLMClient()
-memory_engine = MemoryEngine(llm_client, memory_repository=repositories.memory if settings.uses_postgres else None)
+memory_engine = MemoryEngine(llm_client)
 MemoryUpdateTool.bind_engine(memory_engine)
 tools = [
     MemoryUpdateTool(),
@@ -192,26 +156,10 @@ world_systems: dict[str, WorldSystem] = {}
 def get_world(user_id: str) -> WorldSystem:
     """获取或创建用户的世界系统"""
     if user_id not in world_systems:
-        user_data_dir = os.path.join(DATA_DIR, "users", user_id)
-        if world_persistence:
-            try:
-                world_persistence.hydrate(user_id=user_id, user_data_dir=user_data_dir)
-            except Exception:
-                logger.exception("World hydrate failed for user %s", user_id)
         world = WorldSystem(user_id)
         ensure_first_seen(world.user_data_dir)
         world_systems[user_id] = world
-        sync_world(world)
     return world_systems[user_id]
-
-
-def sync_world(world: WorldSystem) -> None:
-    if not world_persistence:
-        return
-    try:
-        world_persistence.sync(user_id=world.user_id, user_data_dir=world.user_data_dir)
-    except Exception:
-        logger.exception("World sync failed for user %s", world.user_id)
 
 
 ScheduleRemindTool.bind_world(get_world)
@@ -249,7 +197,6 @@ async def websocket_endpoint(websocket: WebSocket):
     session = XiaomanSession()
     writer: SessionWriter | None = None
     chat_timer: ChatSessionTimer | None = None
-    connection_context: ConnectionContext | None = None
 
     try:
         while True:
@@ -265,21 +212,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     user_id = resolve_ws_auth_user_id(msg)
                 except HTTPException as exc:
-                    await websocket.send_json({
-                        "type": "auth_error",
-                        "payload": ws_error_payload(AUTH_FAILED, str(exc.detail), detail=exc.detail),
-                    })
+                    await websocket.send_json({"type": "auth_error", "payload": {"detail": exc.detail}})
                     await websocket.close(code=4401 if exc.status_code == 401 else 4403)
                     return
                 resume = bool(msg.get("resume"))
                 session.user_id = user_id
                 session.id = user_id or session.id
                 chat_timer = ChatSessionTimer()
-                if dialogue_persistence:
-                    connection_context = dialogue_persistence.open_context(
-                        tenant_id=DEFAULT_TENANT_ID,
-                        user_id=user_id,
-                    )
 
                 # 初始化 WorldSystem
                 world = get_world(user_id)
@@ -291,40 +230,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     world.l5_emotion.apply_auth_energy_decay()
                 except Exception:
                     logger.exception("auth energy decay failed for user %s", user_id)
-                sync_world(world)
 
                 # 初始化 JSONL writer（稳定 user_id 作为 session_id）
                 writer = SessionWriter(session.id, user_id)
                 writer.write_header()
                 
-                # PostgreSQL mode restores repository history; file mode keeps the
-                # JSON snapshot + JSONL compatibility path during migration.
-                if dialogue_persistence and connection_context:
-                    repository_rows = dialogue_persistence.load_chunks(connection_context)
-                    for row in repository_rows:
+                # 加载历史（JSON 快照优先，JSONL 按 user_id 兜底）
+                history = load_session_json(user_id)
+                jsonl_rows = load_session_from_jsonl(user_id) if not history else []
+                if jsonl_rows:
+                    for row in jsonl_rows:
                         session.append_chunk(row)
-                    logger.info("Loaded %d rows from PostgreSQL for user %s", len(repository_rows), user_id)
-                else:
-                    history = load_session_json(user_id)
-                    jsonl_rows = load_session_from_jsonl(user_id) if not history else []
-                    if jsonl_rows:
-                        for row in jsonl_rows:
-                            session.append_chunk(row)
-                        logger.info("Loaded %d rows from JSONL for user %s", len(jsonl_rows), user_id)
-                    elif history:
-                        for h in history:
-                            session.append_chunk(ChunkRow(
-                                kind=ChunkKind(h["kind"]),
-                                payload=h["payload"],
-                            ))
-                        logger.info("Loaded %d rows from JSON for user %s", len(history), user_id)
+                    logger.info("Loaded %d rows from JSONL for user %s", len(jsonl_rows), user_id)
+                elif history:
+                    for h in history:
+                        session.append_chunk(ChunkRow(
+                            kind=ChunkKind(h["kind"]),
+                            payload=h["payload"],
+                        ))
+                    logger.info("Loaded %d rows from JSON for user %s", len(history), user_id)
 
                 is_first_session = not session.chunk_table.rows
-                ui_messages = (
-                    dialogue_persistence.load_ui_messages(connection_context)
-                    if dialogue_persistence and connection_context
-                    else load_chat_messages_for_user(user_id) if user_id else []
-                )
+                ui_messages = load_chat_messages_for_user(user_id) if user_id else []
                 if ui_messages:
                     await websocket.send_json({
                         "type": "session_sync",
@@ -404,7 +331,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not user_text:
                     await websocket.send_json({
                         "type": "error",
-                        "payload": ws_error_payload(INVALID_MESSAGE, "消息不能为空"),
+                        "payload": {"code": "invalid_message", "message": "消息不能为空"},
                     })
                     continue
                 await ws_send_typing(websocket, True)
@@ -416,14 +343,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     pcfg = parental.get_config(user_id)
                     crisis = check_crisis(user_text, include_resources=pcfg.crisis_resources_enabled)
                     if crisis.triggered:
-                        operational_services.safety.record(
-                            tenant_id=DEFAULT_TENANT_ID,
-                            user_id=user_id or session.user_id or session.id,
-                            category=crisis.category,
-                            severity="critical" if crisis.category == "self_harm" else "high",
-                            source="websocket_chat",
-                            metadata={"resources_included": bool(crisis.resources)},
-                        )
                         await websocket.send_json({
                             "type": "message",
                             "payload": {
@@ -436,18 +355,19 @@ async def websocket_endpoint(websocket: WebSocket):
                         })
                         continue
 
-                    rate_limit = rate_limit_service.check(
-                        tenant_id=DEFAULT_TENANT_ID,
-                        user_id=user_id or session.user_id or session.id,
-                    )
-                    if not rate_limit.allowed:
+                    usage_limits = parental.check_usage_limits(user_id)
+                    usage_block_reason = parental.get_usage_block_reason(usage_limits)
+                    if pcfg.enabled and usage_block_reason:
                         await websocket.send_json({
-                            "type": "error",
-                            "payload": ws_error_payload(
-                                RATE_LIMITED,
-                                "消息有点密啦，稍等一下再和我说吧～",
-                                **{"retryAfterSeconds": rate_limit.retry_after_seconds},
-                            ),
+                            "type": "message",
+                            "payload": {
+                                "sender": "xiaoman",
+                                "text": parental.get_usage_block_reply(usage_block_reason),
+                                "emotion": "温柔",
+                                "usageBlocked": True,
+                                "usageReason": usage_block_reason,
+                                "usage": usage_limits,
+                            },
                         })
                         continue
 
@@ -483,8 +403,6 @@ async def websocket_endpoint(websocket: WebSocket):
                     session.append_chunk(user_chunk)
                     if writer:
                         writer.write_chunk(user_chunk)
-                    if dialogue_persistence and connection_context:
-                        dialogue_persistence.append_chunk(connection_context, user_chunk)
 
                     if len(session.chunk_table.rows) > 12:
                         logger.info("Session compaction triggered for user %s", user_id)
@@ -643,14 +561,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             event_loop,
                         )
 
-                    def on_llm_usage(event: dict[str, Any]) -> None:
-                        usage_service.record_llm_call(
-                            tenant_id=connection_context.tenant_id if connection_context else DEFAULT_TENANT_ID,
-                            user_id=user_id or session.user_id or session.id,
-                            session_id=connection_context.session_id if connection_context else session.id,
-                            event=event,
-                        )
-
                     try:
                         session = await asyncio.to_thread(
                             run_xiaoman_loop,
@@ -660,15 +570,10 @@ async def websocket_endpoint(websocket: WebSocket):
                             llm_client=llm_client,
                             max_tool_rounds=4,
                             on_stream_delta=on_stream_delta if use_stream else None,
-                            on_usage=on_llm_usage,
                         )
                     except Exception as e:
                         loop_failed = True
                         logger.exception("Session loop failed for user %s", user_id)
-                        await websocket.send_json({
-                            "type": "error",
-                            "payload": ws_error_payload(MODEL_ERROR, "回复暂时生成失败，请稍后再试"),
-                        })
                         if needs_emotion_hold(parsed, detected_emotion=detected.emotion):
                             err_text = pick_emotion_hold_fallback(
                                 user_text,
@@ -753,13 +658,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                             if writer:
                                 writer.write_chunk(last_assistant)
-                            if dialogue_persistence and connection_context:
-                                dialogue_persistence.append_message(
-                                    connection_context,
-                                    role=ChunkKind.ASSISTANT.value,
-                                    content=clean_text,
-                                    metadata={"emotion": emotion},
-                                )
 
                             try:
                                 linkage_changes = world.update_from_message(user_text, clean_text)
@@ -770,7 +668,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                     detected_emotion=detected.emotion,
                                     message_count=message_count,
                                 )
-                                sync_world(world)
                                 xp_result = world.l6_skills.add_xp(1)
                                 if xp_result.get("new_level", 1) > xp_result.get("old_level", 1):
                                     await websocket.send_json({
@@ -820,6 +717,12 @@ async def websocket_endpoint(websocket: WebSocket):
                             except Exception:
                                 logger.exception("Chat timeline failed for user %s", user_id)
 
+                            try:
+                                newly_unlocked = check_achievements(effective_user_id)
+                            except Exception:
+                                logger.exception("Achievement check failed for user %s", user_id)
+                                newly_unlocked = []
+
                             xm_energy = int(xm_emotion.get("energy", 50))
                             if use_stream:
                                 await ws_send_stream_end(
@@ -841,6 +744,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "energy": xm_energy,
                                     },
                                 })
+                            for achievement in newly_unlocked:
+                                await websocket.send_json({
+                                    "type": "achievement_unlocked",
+                                    "payload": achievement,
+                                })
                             if phase0.rest_reminder:
                                 await websocket.send_json({
                                     "type": "rest_reminder",
@@ -858,18 +766,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     },
                                 })
 
-                        if settings.uses_queue:
-                            task_service.enqueue(
-                                tenant_id=connection_context.tenant_id if connection_context else DEFAULT_TENANT_ID,
-                                user_id=user_id or session.user_id or session.id,
-                                task_type="memory_extract",
-                                payload={
-                                    "session_id": session.id,
-                                    "messages": session.chunk_table.to_llm_messages(),
-                                },
-                            )
-                        else:
-                            memory_engine.extract(session)
+                        memory_engine.extract(session)
                         save_session_json(session)
                 finally:
                     await ws_send_typing(websocket, False)
@@ -919,17 +816,8 @@ def dreaming_scheduler():
             for uid in user_ids:
                 if not uid:
                     continue
-                if settings.uses_queue:
-                    logger.info("Queueing nightly flow for user %s", uid)
-                    task_service.enqueue(
-                        tenant_id=DEFAULT_TENANT_ID,
-                        user_id=uid,
-                        task_type="dreaming",
-                        payload={},
-                    )
-                else:
-                    logger.info("Running nightly flow for user %s", uid)
-                    memory_engine.run_nightly_flow(uid, world=get_world(uid))
+                logger.info("Running nightly flow for user %s", uid)
+                memory_engine.run_nightly_flow(uid, world=get_world(uid))
                 try:
                     timeline_append(uid, "dreaming", "夜间记忆整理", detail="Light → Promote → Cleanup")
                 except Exception:
@@ -987,14 +875,6 @@ async def get_achievements(user_id: str):
 @app.post("/api/world/{user_id}/achievements/check")
 async def post_check_achievements(user_id: str):
     """触发成就检查，返回新增解锁"""
-    if settings.uses_queue:
-        task = task_service.enqueue(
-            tenant_id=DEFAULT_TENANT_ID,
-            user_id=user_id,
-            task_type="achievement_check",
-            payload={},
-        )
-        return {"status": "queued", "task_id": task["id"]}
     newly = check_achievements(user_id)
     return {"newly_unlocked": newly, "total_unlocked": len(get_achievements_state(user_id).get("achievements", []))}
 
@@ -1009,25 +889,6 @@ async def get_weekly_report(user_id: str):
 async def get_monthly_report(user_id: str):
     """获取最新月报告（不存在则懒生成）"""
     return get_latest_monthly_report(user_id)
-
-
-@app.post("/api/world/{user_id}/reports/{period}/generate")
-async def generate_report(user_id: str, period: str):
-    """Generate a report inline or enqueue it for the worker."""
-    if period not in {"weekly", "monthly"}:
-        raise HTTPException(status_code=422, detail="period must be weekly or monthly")
-    task_type = f"{period}_report"
-    if settings.uses_queue:
-        task = task_service.enqueue(
-            tenant_id=DEFAULT_TENANT_ID,
-            user_id=user_id,
-            task_type=task_type,
-            payload={},
-        )
-        return {"status": "queued", "task_id": task["id"]}
-    if period == "weekly":
-        return reports_module.generate_weekly_report(user_id, force=True)
-    return reports_module.generate_monthly_report(user_id, force=True)
 
 
 @app.get("/api/world/{user_id}/daily-avatar")
@@ -1113,7 +974,6 @@ async def update_memory(user_id: str, data: dict):
         world = get_world(user_id)
         from xiaoman.world.fact_router import apply_facts_to_world
         apply_facts_to_world(world, [{"content": fact, "category": category, "layer": layer}])
-        sync_world(world)
     return {"status": "ok", "fact": fact, "deduplicated": not saved}
 
 
@@ -1136,14 +996,6 @@ async def memory_diary(user_id: str, date: str = Query(None)):
 @app.post("/api/memory/{user_id}/dreaming")
 async def trigger_dreaming(user_id: str):
     """手动触发夜间整理（Light → Promote → Cleanup → REM）"""
-    if settings.uses_queue:
-        task = task_service.enqueue(
-            tenant_id=DEFAULT_TENANT_ID,
-            user_id=user_id,
-            task_type="dreaming",
-            payload={},
-        )
-        return {"status": "queued", "task_id": task["id"]}
     result = memory_engine.run_nightly_flow(user_id, world=get_world(user_id))
     return {"status": "ok", **result}
 
@@ -1203,7 +1055,6 @@ async def update_identity(user_id: str, data: dict):
     if "school" in data:
         world.l1_identity.set_user_school(data["school"], data.get("class", ""))
     ensure_first_seen(world.user_data_dir)
-    sync_world(world)
     return {
         "status": "ok",
         "honeymoon_active": is_honeymoon_active(world.user_data_dir),

@@ -73,3 +73,4 @@ def test_daily_avatar_deterministic():
     assert a["url"] == b["url"]
     assert a["date"] == "2026-05-27"
     assert "url" in a and "label" in a
+    assert c["id"] != a["id"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 def _csv_env(name: str, default: str = "") -> tuple[str, ...]:
@@ -18,36 +18,20 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _int_env(name: str, default: int) -> int:
-    return int(os.environ.get(name, str(default)))
-
-
-def _float_env(name: str, default: float) -> float:
-    return float(os.environ.get(name, str(default)))
-
-
 @dataclass(frozen=True)
 class Settings:
     """Environment-backed settings shared by SaaS modules."""
 
-    env: str = field(default_factory=lambda: os.environ.get("XIAOMAN_ENV", "local"))
-    storage_backend: str = field(default_factory=lambda: os.environ.get("XIAOMAN_STORAGE_BACKEND", "file"))
-    queue_backend: str = field(default_factory=lambda: os.environ.get("XIAOMAN_QUEUE_BACKEND", "inline"))
-    database_url: str = field(default_factory=lambda: os.environ.get("DATABASE_URL", ""))
-    redis_url: str = field(default_factory=lambda: os.environ.get("REDIS_URL", ""))
-    jwt_secret: str = field(default_factory=lambda: os.environ.get("JWT_SECRET", ""))
-    auth_required: bool = field(default_factory=lambda: _bool_env("XIAOMAN_AUTH_REQUIRED"))
-    rate_limit_messages: int = field(default_factory=lambda: _int_env("XIAOMAN_RATE_LIMIT_MESSAGES", 12))
-    rate_limit_window_seconds: int = field(default_factory=lambda: _int_env("XIAOMAN_RATE_LIMIT_WINDOW_SECONDS", 60))
-    llm_prompt_cost_per_1m: float = field(default_factory=lambda: _float_env("LLM_PROMPT_COST_PER_1M", 0.0))
-    llm_completion_cost_per_1m: float = field(
-        default_factory=lambda: _float_env("LLM_COMPLETION_COST_PER_1M", 0.0)
-    )
-    cors_allowed_origins: tuple[str, ...] = field(
-        default_factory=lambda: _csv_env(
-            "CORS_ALLOWED_ORIGINS",
-            "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000",
-        )
+    env: str = os.environ.get("XIAOMAN_ENV", "local")
+    storage_backend: str = os.environ.get("XIAOMAN_STORAGE_BACKEND", "file")
+    queue_backend: str = os.environ.get("XIAOMAN_QUEUE_BACKEND", "inline")
+    database_url: str = os.environ.get("DATABASE_URL", "")
+    redis_url: str = os.environ.get("REDIS_URL", "")
+    jwt_secret: str = os.environ.get("JWT_SECRET", "")
+    auth_required: bool = _bool_env("XIAOMAN_AUTH_REQUIRED")
+    cors_allowed_origins: tuple[str, ...] = _csv_env(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000",
     )
 
     @property

@@ -103,32 +103,16 @@ export default function OnboardingFlow({
 
   return (
     <div className="onboarding">
-      {step > 0 && (
-        <div className="onboarding-progress" aria-label={`认识小满，第 ${step} 步，共 5 步`}>
-          <span style={{ width: `${(step / 5) * 100}%` }} />
-        </div>
-      )}
       {step === 0 && (
         <div className="step-splash">
-          <div className="onboarding-topline">
-            <span>封闭测试</span>
-            <small>游客体验，无需注册</small>
-          </div>
           <img
             src={onboardingHeroUrl(splashStyle)}
-            width="320"
-            height="320"
-            alt="小满站在晚霞下微笑"
+            alt="小满"
             className="splash-img splash-hero"
           />
-          <p className="splash-tagline">你的新同桌</p>
-          <h1>先聊几句，再决定要不要留下来</h1>
-          <p className="splash-lead">不用急着注册。等你觉得小满真的懂你，再把这段关系保存下来。</p>
-          <button type="button" onClick={() => goToStep(1)}>先认识一下</button>
-          <div className="onboarding-trust-row">
-            <span>隐私默认保护</span>
-            <span>登录后跨设备恢复</span>
-          </div>
+          <p className="splash-tagline">嗨，我是你的新同桌</p>
+          <h1>3 秒认识我，再给我起个名字吧</h1>
+          <button onClick={() => goToStep(1)}>开始认识我</button>
         </div>
       )}
 
@@ -137,15 +121,11 @@ export default function OnboardingFlow({
           <h2>但我还没有名字，你想叫我什么？</h2>
           <div className="candidates">
             {CANDIDATE_NAMES.map((n) => (
-              <button type="button" key={n} onClick={() => { setName(n); goToStep(2, { name: n }); }}>{n}</button>
+              <button key={n} onClick={() => { setName(n); goToStep(2, { name: n }); }}>{n}</button>
             ))}
           </div>
-          <label className="sr-only" htmlFor="onboarding-name">给小满起个名字</label>
           <input
-            id="onboarding-name"
-            name="companion-name"
-            autoComplete="off"
-            placeholder="或者自己取一个…"
+            placeholder="或者自己取一个..."
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -154,7 +134,7 @@ export default function OnboardingFlow({
             onKeyDown={(e) => e.key === "Enter" && (name.trim() || e.currentTarget.value) && goToStep(2, { name: name.trim() || e.currentTarget.value })}
           />
           {name.trim() && (
-            <button type="button" className="onboarding-next" onClick={() => goToStep(2, { name: name.trim() })}>下一步</button>
+            <button className="onboarding-next" onClick={() => goToStep(2, { name: name.trim() })}>下一步</button>
           )}
         </div>
       )}
@@ -165,7 +145,6 @@ export default function OnboardingFlow({
           <div className="grade-grid">
             {GRADES.map((g) => (
               <button
-                type="button"
                 key={g.value}
                 className={grade === g.value ? "selected" : ""}
                 onClick={() => {
@@ -177,25 +156,24 @@ export default function OnboardingFlow({
               </button>
             ))}
           </div>
-          <button type="button" disabled={grade === null} onClick={() => goToStep(3)}>下一步</button>
+          <button disabled={grade === null} onClick={() => goToStep(3)}>下一步</button>
         </div>
       )}
 
       {step === 3 && (
         <div className="step-gender">
           <h2>你是男生还是女生？</h2>
-          <button type="button" onClick={() => { setGender("female"); goToStep(4, { gender: "female" }); }}>女生</button>
-          <button type="button" onClick={() => { setGender("male"); goToStep(4, { gender: "male" }); }}>男生</button>
+          <button onClick={() => { setGender("female"); goToStep(4, { gender: "female" }); }}>女生</button>
+          <button onClick={() => { setGender("male"); goToStep(4, { gender: "male" }); }}>男生</button>
         </div>
       )}
 
       {step === 4 && (
         <div className="step-style">
-          <h2>你喜欢我什么样子的画风？选一个吧</h2>
+          <h2>你喜欢我什么样子的画风？选一个吧~</h2>
           <div className="styles">
             {STYLES.map((s) => (
-              <button
-                type="button"
+              <div
                 key={s.id}
                 className={`style-card ${style === s.id ? "selected" : ""}`}
                 onClick={() => {
@@ -203,15 +181,15 @@ export default function OnboardingFlow({
                   persistDraft({ step, style: s.id });
                 }}
               >
-                <img src={stylePreviewUrl(s.id)} width="80" height="80" alt={s.label} />
+                <img src={stylePreviewUrl(s.id)} alt={s.label} />
                 <div className="style-info">
                   <h3>{s.label}</h3>
                   <p>{s.desc}</p>
                 </div>
-              </button>
+              </div>
             ))}
           </div>
-          <button type="button" disabled={!style} onClick={() => goToStep(5)}>下一步</button>
+          <button disabled={!style} onClick={() => goToStep(5)}>下一步</button>
         </div>
       )}
 
@@ -220,14 +198,12 @@ export default function OnboardingFlow({
           <p className="step-portrait-tag">今日同桌形象</p>
           <img
             src={stylePortraitUrl(style)}
-            width="280"
-            height="320"
             alt="今日小满"
             className="portrait-splash-img"
           />
           <h1>就长这样啦，喜欢吗？</h1>
           <p className="step-portrait-hint">每天我都会换一套穿搭来见你～</p>
-          <button type="button" onClick={handleComplete}>好了，我们开始吧！</button>
+          <button onClick={handleComplete}>好了，我们开始吧！</button>
         </div>
       )}
     </div>

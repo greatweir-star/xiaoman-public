@@ -44,6 +44,13 @@ export default function GrowthPage({ userId, onBack, onNavigate }: GrowthPagePro
   const [loading, setLoading] = useState(true);
   const [shareData, setShareData] = useState<ShareCardData | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [recentAchievementId] = useState(() => sessionStorage.getItem("xiaoman_recent_achievement"));
+
+  useEffect(() => {
+    if (recentAchievementId) {
+      sessionStorage.removeItem("xiaoman_recent_achievement");
+    }
+  }, [recentAchievementId]);
 
   useEffect(() => {
     apiJson<GrowthData | null>(`/api/world/${userId}/growth`, null)
@@ -99,6 +106,7 @@ export default function GrowthPage({ userId, onBack, onNavigate }: GrowthPagePro
                   key={b.id}
                   badge={b}
                   onClick={(badge) => setSelectedBadge(badge)}
+                  animate={b.id === recentAchievementId}
                 />
               ))}
         </div>

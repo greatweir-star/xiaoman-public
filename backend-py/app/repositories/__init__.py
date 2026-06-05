@@ -1,21 +1,25 @@
-"""Storage repository interfaces shared by file and PostgreSQL backends."""
+"""Repository interfaces for file and PostgreSQL storage backends."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 
 class SessionRepository(Protocol):
-    def get_or_create_session(self, tenant_id: str, user_id: str, companion_id: str) -> str:
-        ...
-
     def create_session(self, tenant_id: str, user_id: str, companion_id: str) -> str:
         ...
 
     def append_message(self, session_id: str, message: dict[str, Any]) -> None:
         ...
 
-    def load_messages(self, session_id: str) -> list[dict[str, Any]]:
+    def list_messages(self, session_id: str) -> list[dict[str, Any]]:
+        ...
+
+    def append_chunk(self, session_id: str, chunk: dict[str, Any]) -> None:
+        ...
+
+    def list_chunks(self, session_id: str) -> list[dict[str, Any]]:
         ...
 
 
@@ -62,6 +66,34 @@ class MemoryRepository(Protocol):
     ) -> list[dict[str, Any]]:
         ...
 
+    def save_document(
+        self,
+        tenant_id: str,
+        user_id: str,
+        companion_id: str,
+        category: str,
+        document: dict[str, Any],
+    ) -> str:
+        ...
+
+    def list_documents(
+        self,
+        tenant_id: str,
+        user_id: str,
+        companion_id: str,
+        category: str,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        ...
+
+
+class UserRepository(Protocol):
+    def load_profile(self, tenant_id: str, user_id: str) -> dict[str, Any]:
+        ...
+
+    def save_profile(self, tenant_id: str, user_id: str, profile: dict[str, Any]) -> None:
+        ...
+
 
 class TimelineRepository(Protocol):
     def append_event(
@@ -70,7 +102,7 @@ class TimelineRepository(Protocol):
         user_id: str,
         companion_id: str,
         event: dict[str, Any],
-    ) -> None:
+    ) -> dict[str, Any]:
         ...
 
     def list_events(
@@ -78,22 +110,40 @@ class TimelineRepository(Protocol):
         tenant_id: str,
         user_id: str,
         companion_id: str,
-        limit: int = 80,
+        limit: int,
     ) -> list[dict[str, Any]]:
         ...
 
 
-class UsageRepository(Protocol):
-    def record(self, record: dict[str, Any]) -> None:
-        ...
-
-    def list_for_user(self, tenant_id: str, user_id: str, limit: int = 100) -> list[dict[str, Any]]:
-        ...
-
-
-class RepositoryBundle(Protocol):
+@dataclass(frozen=True)
+class RepositoryBundle:
+    backend: str
+    ready: bool
     sessions: SessionRepository
     world: WorldRepository
     memory: MemoryRepository
+    users: UserRepository
     timeline: TimelineRepository
-    usage: UsageRepository
+
+
+class RepositoryConfigurationError(RuntimeError):
+    """Raised when the selected persistence backend is not configured."""
+
+
+class RepositoryBackendNotReady(RuntimeError):
+    """Raised when a backend boundary exists but its implementation is pending."""
+
+
+from app.repositories.factory import build_repository_bundle
+
+__all__ = [
+    "MemoryRepository",
+    "RepositoryBackendNotReady",
+    "RepositoryBundle",
+    "RepositoryConfigurationError",
+    "SessionRepository",
+    "TimelineRepository",
+    "UserRepository",
+    "WorldRepository",
+    "build_repository_bundle",
+]

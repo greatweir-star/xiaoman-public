@@ -148,3 +148,24 @@ def check_usage_limits(user_id: str) -> dict[str, Any]:
         "session_remaining": session_remaining,
         "night_locked": is_night_locked(user_id),
     }
+
+
+def get_usage_block_reason(limits: dict[str, Any]) -> str | None:
+    """Return the highest-priority parental usage block reason, if any."""
+    if limits.get("night_locked"):
+        return "night"
+    if int(limits.get("daily_remaining", 0)) <= 0:
+        return "daily"
+    if int(limits.get("session_remaining", 0)) <= 0:
+        return "session"
+    return None
+
+
+def get_usage_block_reply(reason: str) -> str:
+    """Return a user-facing reply for an enforced parental usage block."""
+    replies = {
+        "night": "夜间模式已开启，先好好休息，我们明天再聊～",
+        "daily": "今天的使用时间已经到了，去休息一下吧，我们明天见～",
+        "session": "我们已经连续聊了很久啦，先休息一下眼睛，晚点再来找我吧～",
+    }
+    return replies.get(reason, replies["session"])

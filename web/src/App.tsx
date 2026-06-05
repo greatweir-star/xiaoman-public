@@ -1,5 +1,17 @@
-import { apiJson, apiPostJson, createNewGuestId, ensureGuestId, getAccessToken, getAuthEmail, getGatewayUrl, getGuestId, refreshAuthTokens, type AuthTokenPair } from "./lib/backend";
+import {
+  apiJson,
+  apiPostJson,
+  clearAuthTokens,
+  getAccessToken,
+  getGatewayUrl,
+  getRefreshToken,
+  logoutAuth,
+  refreshAuthTokens,
+  setAuthTokens,
+  type AuthTokenPair,
+} from "./lib/backend";
 import { useState, useEffect, useRef, useCallback } from "react";
+import AuthPage from "./components/AuthPage";
 import OnboardingFlow, { type OnboardingConfig } from "./components/OnboardingFlow";
 import ChatPage, { type ChatMessage } from "./pages/ChatPage";
 import LifePage from "./pages/LifePage";
@@ -10,7 +22,6 @@ import GrowthPage from "./pages/GrowthPage";
 import ReportPage from "./pages/ReportPage";
 import WorldDetailPage from "./pages/WorldDetailPage";
 import AvatarLightbox from "./components/AvatarLightbox";
-import SaveRelationSheet from "./components/SaveRelationSheet";
 import { useDailyAvatar } from "./hooks/useDailyAvatar";
 import { getTodayAvatarKey } from "./components/DailyAvatar";
 import {
@@ -19,6 +30,8 @@ import {
 } from "./lib/companionAvatar";
 
 const GATEWAY_URL = getGatewayUrl();
+const LOCAL_MODE_KEY = "xiaoman_local_mode";
+const LOCAL_USER_ID_KEY = "xiaoman_local_user_id";
 
 interface XiaomanConfig {
   name: string;
@@ -29,10 +42,43 @@ interface XiaomanConfig {
 
 type View = "chat" | "life" | "settings" | "diary" | "memory" | "growth" | "report" | "xiaoman-world" | "user-world";
 
+function getOrCreateLocalUserId(): string {
+  let id = localStorage.getItem(LOCAL_USER_ID_KEY);
+  if (!id && !getAccessToken()) {
+    id = localStorage.getItem("xiaoman_user_id");
+  }
+  if (!id) {
+    id = crypto.randomUUID();
+  }
+  localStorage.setItem(LOCAL_USER_ID_KEY, id);
+  return id;
+}
+
+function getInitialUserId(): string {
+  if (getAccessToken()) {
+    return localStorage.getItem("xiaoman_user_id") || getOrCreateLocalUserId();
+  }
+  return getOrCreateLocalUserId();
+}
+
+function isUserOnboarded(userId: string): boolean {
+  const scoped = localStorage.getItem(`xiaoman_onboarded:${userId}`);
+  if (scoped !== null) return scoped === "true";
+  return userId === localStorage.getItem(LOCAL_USER_ID_KEY)
+    && localStorage.getItem("xiaoman_onboarded") === "true";
+}
+
 export default function App() {
+  const [userId, setUserId] = useState(getInitialUserId);
   const [onboarded, setOnboarded] = useState(() =>
-    localStorage.getItem("xiaoman_onboarded") === "true"
+    isUserOnboarded(getInitialUserId())
   );
+  const [localMode, setLocalMode] = useState(() => localStorage.getItem(LOCAL_MODE_KEY) === "true");
+  const [authenticated, setAuthenticated] = useState(() => Boolean(getAccessToken()));
+  const [authReady, setAuthReady] = useState(
+    () => localStorage.getItem(LOCAL_MODE_KEY) === "true" || (!getAccessToken() && !getRefreshToken())
+  );
+  const [accountEmail, setAccountEmail] = useState("");
   const [config, setConfig] = useState<XiaomanConfig>(() => ({
     name: localStorage.getItem("xiaoman_name") || "小满",
     gender: (localStorage.getItem("xiaoman_gender") || "female") as "female" | "male",
@@ -48,22 +94,12 @@ export default function App() {
   const [chatToast, setChatToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [userId, setUserId] = useState(() => {
-    let id = localStorage.getItem("xiaoman_user_id");
-    if (!id) {
-      id = ensureGuestId();
-    } else if (!getAccessToken()) {
-      id = ensureGuestId();
-    }
-    return id;
-  });
-  const [authEmail, setAuthEmail] = useState(() => getAuthEmail());
-
   const ws = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const connecting = useRef(false);
   const mounted = useRef(true);
+  const allowReconnect = useRef(true);
 
   const [isSleeping, setIsSleeping] = useState(() => {
     const h = new Date().getHours();
@@ -77,10 +113,38 @@ export default function App() {
   });
   const [companionCode, setCompanionCode] = useState("");
   const [todayStatus, setTodayStatus] = useState("");
-  const dailyAvatar = useDailyAvatar(userId, config.style);
+  const canUseApp = authReady && (authenticated || localMode);
+  const dailyAvatar = useDailyAvatar(canUseApp ? userId : "", config.style);
   const portraitUrl = resolveCompanionPortraitUrl(config.style, dailyAvatar?.url);
   const [avatarLightbox, setAvatarLightbox] = useState(false);
-  const [relationSheetOpen, setRelationSheetOpen] = useState(false);
+
+  useEffect(() => {
+    if (localMode) {
+      setAuthReady(true);
+      return;
+    }
+    if (!getRefreshToken()) {
+      setAuthenticated(false);
+      setAuthReady(true);
+      return;
+    }
+    let active = true;
+    void refreshAuthTokens().then((tokens) => {
+      if (!active) return;
+      if (tokens) {
+        setAuthenticated(true);
+        setUserId(tokens.user.id);
+        setAccountEmail(tokens.user.email);
+        setOnboarded(isUserOnboarded(tokens.user.id));
+      } else {
+        setAuthenticated(false);
+      }
+      setAuthReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [localMode]);
 
   const fetchSkillTree = useCallback(async () => {
     const data = await apiJson<any | null>(`/api/world/${userId}/skill-tree`, null);
@@ -130,12 +194,12 @@ export default function App() {
     }
   }, [userId]);
   useEffect(() => {
-    if (!onboarded) return;
+    if (!canUseApp || !onboarded) return;
     fetchXiaomanStatus();
     fetchSkillTree();
     const timer = setInterval(fetchXiaomanStatus, 30000);
     return () => clearInterval(timer);
-  }, [onboarded, fetchXiaomanStatus, fetchSkillTree]);
+  }, [canUseApp, onboarded, fetchXiaomanStatus, fetchSkillTree]);
 
   // WebSocket 连接（全局管理，供 ChatPage 使用）
   const showToast = useCallback((text: string) => {
@@ -145,6 +209,7 @@ export default function App() {
   }, []);
 
   const connectWs = useCallback(() => {
+    if (!allowReconnect.current) return;
     if (ws.current?.readyState === WebSocket.OPEN) return;
     if (connecting.current) return;
     connecting.current = true;
@@ -189,7 +254,7 @@ export default function App() {
           clearInterval(heartbeatTimer.current);
           heartbeatTimer.current = null;
         }
-        if (mounted.current) {
+        if (mounted.current && allowReconnect.current) {
           reconnectTimer.current = setTimeout(() => connectWs(), 3000);
         }
       };
@@ -212,14 +277,29 @@ export default function App() {
           }
 
           if (data.type === "auth_error") {
-            showToast(data.payload?.detail || "登录状态已失效");
             setIsTyping(false);
+            if (localMode) {
+              showToast(data.payload?.detail || "当前环境需要登录");
+              allowReconnect.current = false;
+              setLocalMode(false);
+              localStorage.removeItem(LOCAL_MODE_KEY);
+              socket.close();
+              return;
+            }
             void refreshAuthTokens().then((tokens) => {
               if (tokens) {
+                setAuthenticated(true);
                 setUserId(tokens.user.id);
-                setAuthEmail(tokens.user.email);
+                setAccountEmail(tokens.user.email);
+                showToast("登录状态已续期，正在重连…");
                 socket.close();
+                return;
               }
+              showToast("登录状态已失效，请重新登录");
+              allowReconnect.current = false;
+              setAuthenticated(false);
+              setAuthReady(true);
+              socket.close();
             });
             return;
           }
@@ -263,6 +343,15 @@ export default function App() {
               `关系升级 L${data.payload?.old_level} → L${data.payload?.new_level}`;
             showToast(msg);
             void fetchSkillTree();
+            return;
+          }
+
+          if (data.type === "achievement_unlocked") {
+            const achievementId = data.payload?.id;
+            if (achievementId) {
+              sessionStorage.setItem("xiaoman_recent_achievement", achievementId);
+            }
+            showToast(`解锁成就：${data.payload?.name || "新徽章"}`);
             return;
           }
 
@@ -351,14 +440,19 @@ export default function App() {
       connecting.current = false;
       setConnected(false);
     }
-  }, [userId, showToast, fetchSkillTree]);
+  }, [userId, localMode, showToast, fetchSkillTree]);
 
   useEffect(() => {
+    if (!canUseApp || !onboarded) {
+      allowReconnect.current = false;
+      return;
+    }
     mounted.current = true;
-    if (!onboarded) return;
+    allowReconnect.current = true;
     connectWs();
     return () => {
       mounted.current = false;
+      allowReconnect.current = false;
       if (reconnectTimer.current) {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = null;
@@ -369,12 +463,61 @@ export default function App() {
       }
       ws.current?.close();
     };
-  }, [onboarded, connectWs]);
+  }, [canUseApp, onboarded, connectWs]);
 
   const handleOnboardingDone = (cfg: OnboardingConfig) => {
+    localStorage.setItem(`xiaoman_onboarded:${userId}`, "true");
     setConfig(cfg);
     setOnboarded(true);
     void syncIdentityToBackend(cfg);
+  };
+
+  const handleAuthenticated = (tokens: AuthTokenPair) => {
+    setAuthTokens(tokens);
+    localStorage.removeItem(LOCAL_MODE_KEY);
+    allowReconnect.current = true;
+    setLocalMode(false);
+    setAuthenticated(true);
+    setAuthReady(true);
+    setUserId(tokens.user.id);
+    setAccountEmail(tokens.user.email);
+    setOnboarded(isUserOnboarded(tokens.user.id));
+    setMessages([]);
+    setView("chat");
+  };
+
+  const handleLocalContinue = () => {
+    const localUserId = getOrCreateLocalUserId();
+    clearAuthTokens();
+    localStorage.setItem(LOCAL_MODE_KEY, "true");
+    localStorage.setItem("xiaoman_user_id", localUserId);
+    allowReconnect.current = true;
+    setLocalMode(true);
+    setAuthenticated(false);
+    setAuthReady(true);
+    setUserId(localUserId);
+    setAccountEmail("");
+    setOnboarded(isUserOnboarded(localUserId));
+    setMessages([]);
+    setView("chat");
+  };
+
+  const handleLogout = async () => {
+    allowReconnect.current = false;
+    ws.current?.close();
+    if (authenticated) {
+      await logoutAuth();
+    } else {
+      clearAuthTokens();
+    }
+    localStorage.removeItem(LOCAL_MODE_KEY);
+    setConnected(false);
+    setLocalMode(false);
+    setAuthenticated(false);
+    setAuthReady(true);
+    setAccountEmail("");
+    setMessages([]);
+    setView("chat");
   };
 
   const navigate = (v: View) => {
@@ -384,19 +527,6 @@ export default function App() {
   const goBack = () =>
     setView(view === "diary" || view === "memory" || view === "growth" || view === "report" ? "life" : "settings");
 
-  const handleAuthenticated = (tokens: AuthTokenPair) => {
-    setUserId(tokens.user.id);
-    setAuthEmail(tokens.user.email);
-    ws.current?.close();
-  };
-
-  const handleLoggedOut = () => {
-    setAuthEmail("");
-    setUserId(getGuestId() || createNewGuestId());
-    ws.current?.close();
-  };
-  const closeRelationSheet = useCallback(() => setRelationSheetOpen(false), []);
-
   const sendMessage = useCallback((text: string) => {
     if (ws.current?.readyState === WebSocket.OPEN) {
       setMessages((prev) => [...prev, { sender: "user", text, timestamp: Date.now() }]);
@@ -404,6 +534,14 @@ export default function App() {
       setIsTyping(true);
     }
   }, [userId, ws]);
+
+  if (!authReady) {
+    return <div className="auth-loading">正在恢复登录状态…</div>;
+  }
+
+  if (!authenticated && !localMode) {
+    return <AuthPage onAuthenticated={handleAuthenticated} onLocalContinue={handleLocalContinue} />;
+  }
 
   if (!onboarded) {
     return <OnboardingFlow onDone={handleOnboardingDone} />;
@@ -430,12 +568,11 @@ export default function App() {
             skillTree={skillTree}
             dailyAvatarUrl={portraitUrl}
             dailyAvatarLabel={dailyAvatar?.label}
+            dailyAvatarVariant={dailyAvatar?.id}
             companionCode={companionCode}
             todayStatus={todayStatus}
             onAvatarClick={() => setAvatarLightbox(true)}
             userId={userId}
-            authEmail={authEmail}
-            onSaveRelationship={() => setRelationSheetOpen(true)}
           />
         )}
         {view === "life" && (
@@ -446,6 +583,7 @@ export default function App() {
             onNavigate={(v) => navigate(v)}
             dailyAvatarUrl={portraitUrl}
             dailyAvatarLabel={dailyAvatar?.label}
+            dailyAvatarVariant={dailyAvatar?.id}
             onAvatarClick={() => setAvatarLightbox(true)}
           />
         )}
@@ -455,9 +593,9 @@ export default function App() {
             style={config.style}
             onStyleChange={handleStyleChange}
             onNavigate={navigate}
-            authEmail={authEmail}
-            onAuthenticated={handleAuthenticated}
-            onLoggedOut={handleLoggedOut}
+            accountEmail={accountEmail}
+            localMode={localMode}
+            onLogout={() => void handleLogout()}
           />
         )}
         {view === "diary" && <DiaryPage userId={userId} onBack={goBack} />}
@@ -476,21 +614,12 @@ export default function App() {
           onClose={() => setAvatarLightbox(false)}
         />
       )}
-      {relationSheetOpen && (
-        <SaveRelationSheet
-          email={authEmail}
-          onAuthenticated={handleAuthenticated}
-          onLoggedOut={handleLoggedOut}
-          onClose={closeRelationSheet}
-        />
-      )}
 
       {showTabBar && (
-        <nav className="tab-bar" aria-label="主导航">
+        <div className="tab-bar">
           <button
-            type="button"
             className={`tab-item ${view === "chat" ? "active" : ""}`}
-            onClick={() => navigate("chat")}
+            onClick={() => setView("chat")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -498,19 +627,17 @@ export default function App() {
             <span className="tab-label">聊天</span>
           </button>
           <button
-            type="button"
             className={`tab-item ${view === "life" ? "active" : ""}`}
-            onClick={() => navigate("life")}
+            onClick={() => setView("life")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z" />
             </svg>
-            <span className="tab-label">故事</span>
+            <span className="tab-label">life</span>
           </button>
           <button
-            type="button"
             className={`tab-item ${view === "settings" ? "active" : ""}`}
-            onClick={() => navigate("settings")}
+            onClick={() => setView("settings")}
           >
             <svg className="tab-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -518,7 +645,7 @@ export default function App() {
             </svg>
             <span className="tab-label">设置</span>
           </button>
-        </nav>
+        </div>
       )}
     </div>
   );

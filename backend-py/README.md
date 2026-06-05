@@ -20,6 +20,8 @@ Copy `backend-py/.env.example` or set these variables in your shell:
 ```powershell
 $env:XIAOMAN_DATA_DIR="D:\Alice\Projects\xiaoman\backend-py\data"
 $env:XIAOMAN_ENABLE_DREAMING_SCHEDULER="false"
+$env:XIAOMAN_STORAGE_BACKEND="file"
+$env:DATABASE_URL=""
 $env:LLM_API_KEY="your_api_key_here"
 $env:LLM_BASE_URL="https://api.pipellm.ai/openai/v1"
 $env:LLM_MODEL="gpt-4o-mini"
@@ -31,6 +33,7 @@ Notes:
 - `LLM_API_KEY` is required for real LLM calls. It is no longer stored in `xiaoman.json` or start scripts.
 - `XIAOMAN_DATA_DIR` separates local/dev/prod data roots.
 - `XIAOMAN_ENABLE_DREAMING_SCHEDULER=false` keeps the background scheduler disabled during development.
+- `XIAOMAN_STORAGE_BACKEND=file` keeps the local compatibility backend. Use `postgres` with `DATABASE_URL` for SaaS repositories.
 - `XIAOMAN_SECRET_KEY` should be changed before storing real L7 secrets.
 
 ## Tests
@@ -40,7 +43,7 @@ cd D:\Alice\Projects\xiaoman\backend-py
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-Current verified result: `104 passed, 2 warnings`.
+Current verified result: `124 passed, 1 skipped, 2 warnings`.
 
 ## Docker
 

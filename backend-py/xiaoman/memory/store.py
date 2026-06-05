@@ -35,18 +35,8 @@ def _fact_identity(fact: str, category: str, layer: str) -> tuple[str, str, str]
 class MemoryStore:
     """统一记忆存储 — 以 user_id 为主键"""
 
-    def __init__(
-        self,
-        data_dir: str = DATA_DIR,
-        *,
-        fact_repository=None,
-        tenant_id: str = "default",
-        companion_id: str = "xiaoman",
-    ):
+    def __init__(self, data_dir: str = DATA_DIR):
         self.data_dir = data_dir
-        self.fact_repository = fact_repository
-        self.tenant_id = tenant_id
-        self.companion_id = companion_id
         os.makedirs(os.path.join(data_dir, "memory"), exist_ok=True)
 
     def _resolve_user_id(self, user_id: str | None, session_id: str | None) -> str:
@@ -58,10 +48,10 @@ class MemoryStore:
 
     def migrate_session_to_user(self, session_id: str, user_id: str) -> None:
         """将旧 session 级 facts 迁移到用户目录（一次性）"""
-        legacy = legacy_session_facts_path(session_id, self.data_dir)
+        legacy = legacy_session_facts_path(session_id)
         if not os.path.exists(legacy):
             return
-        target = facts_path(user_id, self.data_dir)
+        target = facts_path(user_id)
         if os.path.exists(target) and os.path.getsize(target) > 0:
             return
         shutil.copy2(legacy, target)
@@ -114,7 +104,7 @@ class MemoryStore:
         if self._find_duplicate_fact(user_id, fact, category, layer):
             logger.info("Skipped duplicate fact for user %s", user_id)
             return False
-        path = facts_path(user_id, self.data_dir)
+        path = facts_path(user_id)
         obj: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "fact": fact,
@@ -124,38 +114,10 @@ class MemoryStore:
         }
         with open(path, "a", encoding="utf-8") as f:
             f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-        if self.fact_repository:
-            try:
-                self.fact_repository.save_fact(
-                    self.tenant_id,
-                    user_id,
-                    self.companion_id,
-                    obj,
-                )
-            except Exception:
-                logger.exception("Memory repository save failed for user %s", user_id)
         return True
 
     def load_facts(self, user_id: str) -> list[dict[str, Any]]:
-        rows = self._load_jsonl(facts_path(user_id, self.data_dir))
-        if self.fact_repository:
-            try:
-                repository_rows = self.fact_repository.search(
-                    self.tenant_id,
-                    user_id,
-                    self.companion_id,
-                    "",
-                    1000,
-                )
-                seen = {str(row.get("fact") or row.get("content") or "").strip() for row in rows}
-                rows.extend(
-                    row
-                    for row in repository_rows
-                    if str(row.get("fact") or row.get("content") or "").strip() not in seen
-                )
-            except Exception:
-                logger.exception("Memory repository load failed for user %s", user_id)
-        return rows
+        return self._load_jsonl(facts_path(user_id))
 
     def load_facts_for_date(self, user_id: str, date: str) -> list[dict[str, Any]]:
         facts = self.load_facts(user_id)
@@ -164,12 +126,12 @@ class MemoryStore:
     # --- Organized ---
 
     def save_organized(self, user_id: str, memories: list[dict[str, Any]]) -> None:
-        path = organized_path(user_id, self.data_dir)
+        path = organized_path(user_id)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(memories, f, ensure_ascii=False, indent=2)
 
     def load_organized(self, user_id: str) -> list[dict[str, Any]]:
-        path = organized_path(user_id, self.data_dir)
+        path = organized_path(user_id)
         if not os.path.exists(path):
             return []
         with open(path, "r", encoding="utf-8") as f:
@@ -191,7 +153,7 @@ class MemoryStore:
     # --- Diary ---
 
     def save_diary(self, user_id: str, date: str, content: str) -> None:
-        path = diary_path(user_id, self.data_dir)
+        path = diary_path(user_id)
         obj = {
             "date": date,
             "content": content,
@@ -201,7 +163,7 @@ class MemoryStore:
             f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
     def load_diary(self, user_id: str, date: str | None = None) -> list[dict[str, Any]]:
-        entries = self._load_jsonl(diary_path(user_id, self.data_dir))
+        entries = self._load_jsonl(diary_path(user_id))
         if date:
             return [e for e in entries if e.get("date") == date]
         return entries
@@ -209,7 +171,7 @@ class MemoryStore:
     # --- Cursor（按 session 记录提取进度）---
 
     def load_cursor(self, user_id: str, session_id: str) -> int:
-        path = cursor_path(user_id, self.data_dir)
+        path = cursor_path(user_id)
         if not os.path.exists(path):
             return 0
         with open(path, "r", encoding="utf-8") as f:
@@ -217,13 +179,13 @@ class MemoryStore:
             return int(data.get(session_id, 0))
 
     def save_cursor(self, user_id: str, session_id: str, cursor: int) -> None:
-        path = cursor_path(user_id, self.data_dir)
+        path = cursor_path(user_id)
         data: dict[str, int] = {}
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         data[session_id] = cursor
-        user_memory_dir(user_id, self.data_dir)
+        user_memory_dir(user_id)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 

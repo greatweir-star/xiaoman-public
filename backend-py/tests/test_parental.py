@@ -6,6 +6,8 @@ from xiaoman.parental import (
     update_config,
     is_night_locked,
     check_usage_limits,
+    get_usage_block_reason,
+    get_usage_block_reply,
 )
 
 
@@ -64,3 +66,13 @@ def test_check_usage_limits_disabled():
     lim = check_usage_limits("__any__")
     assert lim["daily_used"] == 0
     assert lim["night_locked"] is False
+
+
+def test_usage_block_reason_prefers_night_and_enforces_session():
+    limits = {"night_locked": False, "daily_remaining": 10, "session_remaining": 0}
+    assert get_usage_block_reason(limits) == "session"
+    assert "休息" in get_usage_block_reply("session")
+    limits["daily_remaining"] = 0
+    assert get_usage_block_reason(limits) == "daily"
+    limits["night_locked"] = True
+    assert get_usage_block_reason(limits) == "night"

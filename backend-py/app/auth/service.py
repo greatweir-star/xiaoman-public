@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.auth.models import AuthUserResponse, TokenPair
+from app.auth.factory import build_auth_repository
 from app.auth.passwords import hash_password, verify_password
 from app.auth.repository import (
     DEFAULT_TENANT_ID,
     AuthRepository,
     AuthUser,
-    create_auth_repository,
 )
 from app.auth.tokens import TokenError, create_token, decode_token, hash_token
 from app.config import Settings, get_settings
@@ -76,13 +76,11 @@ class AuthService:
         user = self.repository.get_user_by_id(str(payload["sub"]))
         if not user:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
+        self.repository.revoke_session(refresh_hash)
         return self._issue_pair(user)
 
-    def logout(self, refresh_token: str) -> AuthUser | None:
-        refresh_hash = hash_token(refresh_token)
-        session = self.repository.get_session_by_refresh_hash(refresh_hash)
-        self.repository.revoke_session(refresh_hash)
-        return self.repository.get_user_by_id(session.user_id) if session else None
+    def logout(self, refresh_token: str) -> None:
+        self.repository.revoke_session(hash_token(refresh_token))
 
     def get_user_from_access_token(self, access_token: str) -> AuthUser:
         payload = self.decode_access(access_token)
@@ -137,7 +135,7 @@ class AuthService:
         )
 
 
-_repo = create_auth_repository()
+_repo = build_auth_repository()
 _service = AuthService(_repo)
 
 

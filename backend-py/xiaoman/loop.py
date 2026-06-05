@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from collections.abc import Callable
 from typing import Any
 
@@ -61,7 +60,6 @@ def run_xiaoman_loop(
     llm_client,
     max_tool_rounds: int = 8,
     on_stream_delta: Callable[[str], None] | None = None,
-    on_usage: Callable[[dict[str, Any]], None] | None = None,
 ) -> XiaomanSession:
     """Session-first 执行循环 — 参考 OpenRath run_session_loop
     
@@ -83,45 +81,12 @@ def run_xiaoman_loop(
         
         # 2. 调用 LLM（最后一轮可流式；含 tool 的中间轮不推送增量）
         stream_cb = on_stream_delta if on_stream_delta else None
-        started_at = time.perf_counter()
-        try:
-            assistant_message, usage = _call_llm(
-                llm_client,
-                messages,
-                tool_schemas,
-                on_stream_delta=stream_cb,
-            )
-        except Exception as exc:
-            if on_usage:
-                try:
-                    on_usage(
-                        {
-                            "provider": getattr(llm_client, "provider", "openai-compatible"),
-                            "model": getattr(llm_client, "model", "unknown"),
-                            "request_type": "chat",
-                            "usage": {},
-                            "latency_ms": int((time.perf_counter() - started_at) * 1000),
-                            "status": "error",
-                            "metadata": {"error_type": type(exc).__name__},
-                        }
-                    )
-                except Exception:
-                    logger.exception("Failed to record LLM error usage")
-            raise
-        if on_usage:
-            try:
-                on_usage(
-                    {
-                        "provider": getattr(llm_client, "provider", "openai-compatible"),
-                        "model": getattr(llm_client, "model", "unknown"),
-                        "request_type": "chat",
-                        "usage": usage or {},
-                        "latency_ms": int((time.perf_counter() - started_at) * 1000),
-                        "status": "success",
-                    }
-                )
-            except Exception:
-                logger.exception("Failed to record LLM usage")
+        assistant_message, usage = _call_llm(
+            llm_client,
+            messages,
+            tool_schemas,
+            on_stream_delta=stream_cb,
+        )
         content = assistant_message.get("content")
         tool_calls = assistant_message.get("tool_calls")
 

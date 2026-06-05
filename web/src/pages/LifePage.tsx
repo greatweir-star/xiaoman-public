@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import XiaomanAvatar from "../components/XiaomanAvatar";
 import { apiJson } from "../lib/backend";
+import { useState, useEffect } from "react";
+import XiaomanAvatar from "../components/XiaomanAvatar";
 
 interface LifePageProps {
   userId: string;
@@ -9,6 +9,7 @@ interface LifePageProps {
   onNavigate: (view: "diary" | "memory" | "growth") => void;
   dailyAvatarUrl?: string;
   dailyAvatarLabel?: string;
+  dailyAvatarVariant?: string;
   onAvatarClick?: () => void;
 }
 
@@ -20,36 +21,25 @@ interface TimelineEntry {
   detail?: string;
 }
 
-interface SkillTree {
-  level: number;
-  name: string;
-  xp: number;
-  next_threshold: number;
-}
-
 const TYPE_LABELS: Record<string, string> = {
-  period: "生活片段",
-  diary: "同桌日记",
-  chat: "来自聊天",
-  linkage: "关系变化",
-  dreaming: "夜间记忆",
+  period: "时段",
+  diary: "日记",
+  chat: "聊天",
+  linkage: "联动",
+  dreaming: "夜间",
 };
 
-function localDateKey(date: Date): string {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
-
 function formatTimelineTime(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const today = localDateKey(new Date());
-  const dateKey = localDateKey(date);
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  if (dateKey === today) return `今天 ${hours}:${minutes}`;
-  return `${date.getMonth() + 1} 月 ${date.getDate()} 日`;
+  try {
+    const d = new Date(iso);
+    const mo = (d.getMonth() + 1).toString().padStart(2, "0");
+    const day = d.getDate().toString().padStart(2, "0");
+    const h = d.getHours().toString().padStart(2, "0");
+    const m = d.getMinutes().toString().padStart(2, "0");
+    return `${mo}-${day} ${h}:${m}`;
+  } catch {
+    return iso;
+  }
 }
 
 export default function LifePage({
@@ -59,156 +49,181 @@ export default function LifePage({
   onNavigate,
   dailyAvatarUrl,
   dailyAvatarLabel,
+  dailyAvatarVariant,
   onAvatarClick,
 }: LifePageProps) {
   const [xiaomanData, setXiaomanData] = useState<any>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
-  const [skillTree, setSkillTree] = useState<SkillTree>({
-    level: 1,
-    name: "新同桌",
-    xp: 0,
-    next_threshold: 20,
-  });
+  const [skillTree, setSkillTree] = useState({ level: 1, name: "新同桌", xp: 0, next_threshold: 20 });
 
   useEffect(() => {
-    let active = true;
-    Promise.all([
-      apiJson<any | null>(`/api/world/${userId}/xiaoman`, null),
-      apiJson<{ entries?: TimelineEntry[] }>(`/api/world/${userId}/timeline?limit=40`, { entries: [] }),
-      apiJson<any | null>(`/api/world/${userId}/skill-tree`, null),
-    ]).then(([world, timelineData, tree]) => {
-      if (!active) return;
-      if (world) setXiaomanData(world);
-      setTimeline(timelineData.entries || []);
-      if (tree) {
+    apiJson<any | null>(`/api/world/${userId}/xiaoman`, null).then((d) => d && setXiaomanData(d));
+  }, [userId]);
+
+  useEffect(() => {
+    apiJson<{ entries?: TimelineEntry[] }>(`/api/world/${userId}/timeline?limit=40`, { entries: [] }).then((d) => setTimeline(d.entries || []));
+  }, [userId]);
+
+  useEffect(() => {
+    apiJson<any | null>(`/api/world/${userId}/skill-tree`, null).then((d) => {
+      if (d) {
         setSkillTree({
-          level: tree.level ?? 1,
-          name: tree.name ?? "新同桌",
-          xp: tree.xp ?? 0,
-          next_threshold: tree.next_threshold ?? 20,
+          level: d.level ?? 1,
+          name: d.name ?? "\u65b0\u540c\u684c",
+          xp: d.xp ?? 0,
+          next_threshold: d.next_threshold ?? 20,
         });
       }
     });
-    return () => {
-      active = false;
-    };
   }, [userId]);
 
+  const emotion = xiaomanData?.emotion || {};
   const identity = xiaomanData?.identity || {};
-  const signature = identity.catchphrase || "慢一点也没关系，我在听。";
-  const today = localDateKey(new Date());
-  const todayEntries = timeline.filter((entry) => localDateKey(new Date(entry.ts)) === today);
-  const todayChats = todayEntries.filter((entry) => entry.type === "chat").length;
-  const memoryCount = timeline.filter((entry) => entry.type === "chat" || entry.type === "linkage").length;
+  const signature = identity.catchphrase || "说真的";
+
+  // 进度条计算
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const todayChats = timeline.filter((e) => e.type === "chat" && e.ts.startsWith(todayStr)).length;
+
+  const day = now.getDay();
+  const diffToMonday = day === 0 ? 6 : day - 1;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  const chatDates = new Set<string>();
+  timeline.forEach((e) => {
+    if (e.type === "chat") {
+      try {
+        const d = new Date(e.ts);
+        if (d >= monday && d <= sunday) {
+          chatDates.add(e.ts.slice(0, 10));
+        }
+      } catch {
+        // ignore
+      }
+    }
+  });
+  const weeklyChatDays = chatDates.size;
+
   const levelProgress = skillTree.next_threshold > 0
     ? Math.min(100, Math.round((skillTree.xp / skillTree.next_threshold) * 100))
     : 100;
 
   return (
-    <div className="life-page story-page">
-      <header className="story-page-header">
-        <div>
-          <p className="soft-eyebrow">STORY</p>
-          <h2>我们的故事</h2>
+    <div className="life-page">
+      <div className="life-cover">
+        <div className="life-cover-bg"></div>
+        <div className="life-cover-overlay">
+          <div className="life-cover-info">
+            <div className="life-cover-text">
+              <h2>{config.name}</h2>
+              <p className="life-signature">{signature}</p>
+              <p className="life-mood-line">{currentEmotion} · 精力{emotion.energy || 50}%</p>
+            </div>
+            <XiaomanAvatar
+              size="lg"
+              style={config.style || "fresh"}
+              srcOverride={dailyAvatarUrl}
+              enlargeable
+              title={dailyAvatarLabel ? `今日 · ${dailyAvatarLabel}` : undefined}
+              dailyVariant={dailyAvatarVariant}
+              onClick={onAvatarClick}
+            />
+          </div>
         </div>
-        <button type="button" className="story-header-action" aria-label="查看关系收藏">
-          ♡
-        </button>
-      </header>
+      </div>
 
-      <article className="story-relationship-card">
-        <XiaomanAvatar
-          size="lg"
-          style={config.style || "fresh"}
-          srcOverride={dailyAvatarUrl}
-          enlargeable
-          title={dailyAvatarLabel ? `今日 · ${dailyAvatarLabel}` : undefined}
-          onClick={onAvatarClick}
-        />
-        <div>
-          <span className="story-chip">关系 Lv.{skillTree.level}</span>
-          <h3>她正在慢慢懂你</h3>
-          <p>{signature}</p>
+      <div className="life-status-bar">
+        <div className="life-stat">
+          <span className="life-stat-label">心情</span>
+          <div className="life-stat-bar">
+            <div style={{ width: `${Math.min(100, (emotion.energy || 50) * 1.2)}%`, background: "#4CAF50" }} />
+          </div>
         </div>
-      </article>
+        <div className="life-stat">
+          <span className="life-stat-label">精力</span>
+          <div className="life-stat-bar">
+            <div style={{ width: `${emotion.energy || 50}%`, background: "#2196F3" }} />
+          </div>
+        </div>
+      </div>
 
-      <section className="story-section">
-        <div className="story-section-heading">
-          <div>
-            <p className="soft-eyebrow">TODAY</p>
-            <h3>今天留下的片段</h3>
+      <div className="life-progress-section">
+        <div className="life-progress-item">
+          <div className="life-progress-header">
+            <span className="life-progress-label">今日对话</span>
+            <span className="life-progress-value">{todayChats}/15 轮</span>
           </div>
-          <button type="button" onClick={() => onNavigate("diary")}>查看日记</button>
+          <div className="life-progress-bar">
+            <div style={{ width: `${Math.min(100, (todayChats / 15) * 100)}%`, background: "#4CAF50" }} />
+          </div>
         </div>
-        <div className="story-fragment-grid">
-          <article className="story-fragment-card story-fragment-card-warm">
-            <span>聊过的事</span>
-            <p>{todayChats > 0 ? `今天已经留下 ${todayChats} 个聊天片段。` : "今天的故事还没开始，去和小满说两句吧。"}</p>
-          </article>
-          <article className="story-fragment-card story-fragment-card-cool">
-            <span>情绪天气</span>
-            <p>今天是{currentEmotion || "平静"}的一天，小满会跟着你的节奏慢慢来。</p>
-          </article>
+        <div className="life-progress-item">
+          <div className="life-progress-header">
+            <span className="life-progress-label">本周连续</span>
+            <span className="life-progress-value">{weeklyChatDays}/7 天</span>
+          </div>
+          <div className="life-progress-bar">
+            <div style={{ width: `${Math.min(100, (weeklyChatDays / 7) * 100)}%`, background: "#2196F3" }} />
+          </div>
         </div>
-      </section>
+        <div className="life-progress-item">
+          <div className="life-progress-header">
+            <span className="life-progress-label">懂我程度 Lv.{skillTree.level} → {skillTree.level + 1}</span>
+            <span className="life-progress-value">{skillTree.xp}/{skillTree.next_threshold} XP</span>
+          </div>
+          <div className="life-progress-bar">
+            <div style={{ width: `${levelProgress}%`, background: "#FF9800" }} />
+          </div>
+        </div>
+      </div>
 
-      <section className="story-section">
-        <div className="story-section-heading">
-          <div>
-            <p className="soft-eyebrow">GROWTH</p>
-            <h3>关系正在生长</h3>
-          </div>
-          <span className="story-chip">Lv.{skillTree.level} {skillTree.name}</span>
-        </div>
-        <div className="story-growth-card">
-          <div className="story-growth-copy">
-            <span>距离下一阶段还有一点点</span>
-            <strong>{levelProgress}%</strong>
-          </div>
-          <div className="story-progress" aria-label={`关系成长进度 ${levelProgress}%`}>
-            <span style={{ width: `${levelProgress}%` }} />
-          </div>
-        </div>
-        <div className="story-metric-grid">
-          <button type="button" onClick={() => onNavigate("memory")}>
-            <strong>{memoryCount}</strong>
-            <span>记忆片段</span>
-          </button>
-          <button type="button" onClick={() => onNavigate("growth")}>
-            <strong>{Math.max(0, skillTree.level - 1)}</strong>
-            <span>成长节点</span>
-          </button>
-          <button type="button" onClick={() => onNavigate("diary")}>
-            <strong>{timeline.filter((entry) => entry.type === "diary").length}</strong>
-            <span>同桌日记</span>
-          </button>
-        </div>
-      </section>
-
-      <section className="story-section story-timeline-section">
-        <div className="story-section-heading">
-          <div>
-            <p className="soft-eyebrow">TIMELINE</p>
-            <h3>最近发生的事</h3>
-          </div>
-        </div>
+      <section className="life-timeline-section">
+        <h3 className="life-timeline-heading">生活时间线</h3>
         {timeline.length === 0 ? (
-          <p className="story-empty">还没有记录。多聊几句，你们的故事会从这里慢慢长出来。</p>
+          <p className="life-timeline-empty">还没有记录，多聊几句或等等小满的一天~</p>
         ) : (
-          <ul className="story-timeline">
-            {timeline.slice(0, 8).map((entry) => (
-              <li key={entry.id}>
-                <span className="story-timeline-dot" />
-                <div>
-                  <strong>{entry.title}</strong>
-                  <span>{TYPE_LABELS[entry.type] || entry.type} · {formatTimelineTime(entry.ts)}</span>
-                  {entry.detail ? <p>{entry.detail}</p> : null}
+          <ul className="life-timeline-list">
+            {timeline.map((entry) => (
+              <li key={entry.id} className="life-timeline-item">
+                <div className="life-timeline-meta">
+                  <span className="life-timeline-type">
+                    {TYPE_LABELS[entry.type] || entry.type}
+                  </span>
+                  <span className="life-timeline-time">{formatTimelineTime(entry.ts)}</span>
                 </div>
+                <div className="life-timeline-title">{entry.title}</div>
+                {entry.detail && (
+                  <div className="life-timeline-detail">{entry.detail}</div>
+                )}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <div className="life-menu">
+        <div className="life-menu-item" onClick={() => onNavigate("diary")}>
+          <span className="life-menu-icon">记</span>
+          <span className="life-menu-text">日记</span>
+          <span className="life-menu-arrow">›</span>
+        </div>
+        <div className="life-menu-item" onClick={() => onNavigate("memory")}>
+          <span className="life-menu-icon" style={{ background: "#fff3e0", color: "#e65100" }}>忆</span>
+          <span className="life-menu-text">记忆库</span>
+          <span className="life-menu-arrow">›</span>
+        </div>
+        <div className="life-menu-item" onClick={() => onNavigate("growth")}>
+          <span className="life-menu-icon" style={{ background: "#e8f5e9", color: "#2e7d32" }}>长</span>
+          <span className="life-menu-text">成长 · 小满眼中的我</span>
+          <span className="life-menu-arrow">›</span>
+        </div>
+      </div>
     </div>
   );
 }

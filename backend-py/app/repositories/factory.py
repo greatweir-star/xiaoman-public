@@ -1,24 +1,28 @@
-"""Repository backend selection."""
+"""Select the configured SaaS repository backend."""
 
 from __future__ import annotations
 
-from functools import lru_cache
+from pathlib import Path
+from typing import Any, Callable
 
-from app.config import get_settings
-from app.repositories.file import FileRepositories, create_file_repositories
-from app.repositories.postgres import PostgresRepositories, create_postgres_repositories
+from app.config import Settings, get_settings
+from app.repositories import RepositoryBundle, RepositoryConfigurationError
+from app.repositories.file import build_file_repository_bundle
+from app.repositories.postgres import build_postgres_repository_bundle
 
 
-@lru_cache(maxsize=1)
-def get_repositories() -> FileRepositories | PostgresRepositories:
-    settings = get_settings()
-    if settings.storage_backend.lower() == "file":
-        return create_file_repositories()
-    if settings.storage_backend.lower() == "postgres":
+def build_repository_bundle(
+    settings: Settings | None = None,
+    *,
+    data_dir: str | Path | None = None,
+    postgres_connect: Callable[[str], Any] | None = None,
+) -> RepositoryBundle:
+    settings = settings or get_settings()
+    backend = settings.storage_backend.strip().lower()
+    if backend == "file":
+        return build_file_repository_bundle(data_dir)
+    if backend == "postgres":
         if not settings.database_url:
-            raise RuntimeError("DATABASE_URL is required when XIAOMAN_STORAGE_BACKEND=postgres")
-        return create_postgres_repositories(settings.database_url)
-    raise RuntimeError(
-        f"Unsupported XIAOMAN_STORAGE_BACKEND={settings.storage_backend!r}. "
-        "Expected 'file' or 'postgres'."
-    )
+            raise RepositoryConfigurationError("DATABASE_URL is required for the postgres storage backend")
+        return build_postgres_repository_bundle(settings.database_url, connect=postgres_connect)
+    raise RepositoryConfigurationError(f"unsupported storage backend: {settings.storage_backend}")
