@@ -1,28 +1,46 @@
 #!/bin/bash
-# 小满项目 GitHub 双仓库智能同步脚本
+# 小满 + nomos 项目 GitHub 多仓库智能同步脚本
 # - private (xiaoman.git): 双向同步，全量内容
 # - public (xiaoman-public.git): 单向发布，仅源码
+# - private (nomos.git): 双向同步，全量内容
+# - private (nomos-references.git): 双向同步，全量内容
 
 set -e
 
 PRIVATE_DIR="/Users/zhongqiwei/projects/xiaoman"
 PUBLIC_DIR="/Users/zhongqiwei/projects/xiaoman-public"
-PRIVATE_URL="https://github.com/greatweir-star/xiaoman.git"
-PUBLIC_URL="https://github.com/greatweir-star/xiaoman-public.git"
+NOMOS_DIR="/Users/zhongqiwei/projects/nomos"
+NOMOS_REF_DIR="/Users/zhongqiwei/projects/nomos-references"
 LOG_FILE="$PRIVATE_DIR/tools/sync.log"
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
 }
 
-# ==================== Private 仓库同步 ====================
-sync_private() {
-    cd "$PRIVATE_DIR"
-    log "=== [PRIVATE] 开始同步 xiaoman.git ==="
+# ==================== Private 仓库通用同步 ====================
+# 参数1: 仓库本地目录
+# 参数2: 仓库显示名称
+sync_private_repo() {
+    local repo_dir="$1"
+    local repo_name="$2"
+
+    cd "$repo_dir"
+    log "=== [$repo_name] 开始同步 ==="
+
+    # 检查当前分支（优先 main，回退 master）
+    local branch="main"
+    if ! git show-ref --verify --quiet refs/heads/main; then
+        if git show-ref --verify --quiet refs/heads/master; then
+            branch="master"
+        else
+            log "[$repo_name] 未找到 main/master 分支，跳过"
+            return 1
+        fi
+    fi
 
     # fetch 远程
-    if ! git fetch origin main 2>/dev/null; then
-        log "[PRIVATE] 无法连接 GitHub，跳过"
+    if ! git fetch origin "$branch" 2>/dev/null; then
+        log "[$repo_name] 无法连接 GitHub，跳过"
         return 1
     fi
 
@@ -34,27 +52,27 @@ sync_private() {
         git stash push -m "auto-stash-$(date +%Y%m%d-%H%M%S)" || true
     fi
 
-    local local_commit=$(git rev-parse main)
-    local remote_commit=$(git rev-parse origin/main)
-    local base_commit=$(git merge-base main origin/main)
+    local local_commit=$(git rev-parse "$branch")
+    local remote_commit=$(git rev-parse "origin/$branch")
+    local base_commit=$(git merge-base "$branch" "origin/$branch")
 
     if [ "$local_commit" = "$remote_commit" ]; then
-        log "[PRIVATE] 已同步，无需操作"
+        log "[$repo_name] 已同步，无需操作"
     elif [ "$local_commit" = "$base_commit" ]; then
-        log "[PRIVATE] 远程领先，执行 pull"
-        git pull origin main --no-rebase
-        log "[PRIVATE] pull 完成"
+        log "[$repo_name] 远程领先，执行 pull"
+        git pull origin "$branch" --no-rebase
+        log "[$repo_name] pull 完成"
     elif [ "$remote_commit" = "$base_commit" ]; then
-        log "[PRIVATE] 本地领先，执行 push"
-        git push origin main
-        log "[PRIVATE] push 完成"
+        log "[$repo_name] 本地领先，执行 push"
+        git push origin "$branch"
+        log "[$repo_name] push 完成"
     else
-        log "[PRIVATE] 本地与远程分叉，尝试自动合并"
-        if git merge origin/main --no-edit; then
-            git push origin main
-            log "[PRIVATE] 合并并推送完成"
+        log "[$repo_name] 本地与远程分叉，尝试自动合并"
+        if git merge "origin/$branch" --no-edit; then
+            git push origin "$branch"
+            log "[$repo_name] 合并并推送完成"
         else
-            log "[PRIVATE] 合并冲突！已中止，需要手动处理"
+            log "[$repo_name] 合并冲突！已中止，需要手动处理"
             git merge --abort 2>/dev/null || true
             if [ "$had_changes" = true ]; then
                 git stash pop 2>/dev/null || true
@@ -69,8 +87,8 @@ sync_private() {
         git add -A
         if ! git diff --cached --quiet; then
             git commit -m "auto: daily backup $(date +%Y-%m-%d_%H:%M)"
-            git push origin main
-            log "[PRIVATE] 本地更改已提交并推送"
+            git push origin "$branch"
+            log "[$repo_name] 本地更改已提交并推送"
         fi
     fi
 }
@@ -152,7 +170,9 @@ sync_public() {
 }
 
 # ==================== 主流程 ====================
-log "========== 小满双仓库同步开始 =========="
-sync_private
+log "========== 小满 + nomos 多仓库同步开始 =========="
+sync_private_repo "$PRIVATE_DIR" "xiaoman-private"
 sync_public
+sync_private_repo "$NOMOS_DIR" "nomos"
+sync_private_repo "$NOMOS_REF_DIR" "nomos-references"
 log "========== 同步结束 =========="
